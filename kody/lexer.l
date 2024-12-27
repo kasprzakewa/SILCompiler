@@ -11,8 +11,14 @@
 %%
 "#".*       ;
 [ \t\n]+    ;
-[0-9]+      { yylval.ival = std::atoi(yytext); return NUM; }
-[_a-z]+     { yylval.sval = yytext; return PID; }
+[0-9]+      {   
+                yylval.ival = std::atoi(yytext); return NUM; 
+            }
+[_a-z]+     {
+                yylval.sval = strdup(yytext); 
+                return PID;
+            }
+
 ":="        {return ASSIGN;}
 ";"         {return ';';}
 "("         {return '(';}
