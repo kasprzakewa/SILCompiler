@@ -1,18 +1,39 @@
 %{
    #include <iostream>
+   #include <vector>
+   #include <string>
    using namespace std;
 
    int yywrap() { return 1; }
    int yylex();
    void yyerror(const char *s);
+
+   int tempCounter = 0;
+   std::vector<std::string> tac;
+
+   void printTAC() {
+         std::cout << "Three Address Code:" << std::endl;
+      for (const auto& code : tac) {
+         std::cout << code << std::endl;
+      }
+   }
 %}
 
 %define parse.error verbose
 
+%code requires {
+   #include <iostream>
+   #include <vector>
+   #include <string>
+   using namespace std;
+}
+
 %union {
    int ival;
-   char *sval;
+   std::string *sval;
 }
+
+%type <sval> value identifier expression condition command args_decl args proc_head proc_call declarations commands main procedures program_all
 
 %token <ival> NUM
 %token <sval> PID
@@ -22,92 +43,184 @@
 
 %%
 
-program_all:  procedures main 
-// {cout << "1" << endl;}
+program_all:  procedures main
 
-procedures:  procedures PROCEDURE proc_head IS declarations BEG commands END {cout << "2: PROCEDURE" << endl;}
-             | procedures PROCEDURE proc_head IS BEG commands END {cout << "3: PROCEDURE" << endl;}
-             | 
-            //  {cout << 4 << endl;}
+procedures:  procedures PROCEDURE proc_head IS declarations BEG commands END { 
+                  $$ = nullptr; 
+               }
+             | procedures PROCEDURE proc_head IS BEG commands END 
+               { 
+                  $$ = nullptr; 
+               }
+             | { 
+                  $$ = nullptr; 
+               }
+             ;
 
-main:        PROGRAM IS declarations BEG commands END {cout << "5: PROGRAM" << endl;}
-             | PROGRAM IS BEG commands END {cout << "6: PROGRAM" << endl;}
+main:        PROGRAM IS declarations BEG commands END { 
+                  $$ = nullptr; 
+               }
+             | PROGRAM IS BEG commands END { 
+                  $$ = nullptr; 
+               }
+             ;
 
-commands:    commands command 
-// {cout << "7" << endl;}
-             | command 
-            //  {cout << "8" << endl;}
+commands:    commands command { 
+                  $$ = nullptr; 
+               }
+             | command { 
+                  $$ = nullptr; 
+               }
+             ;
 
-command:     identifier ASSIGN expression';' {cout << "9: :=" << endl;}
-             | IF condition THEN commands ELSE commands ENDIF {cout << "10: IF THEN ELSE" << endl;}
-             | IF condition THEN commands ENDIF {cout << "11: IF THEN" << endl;}
-             | WHILE condition DO commands ENDWHILE 
-            //  {cout << "12: WHILE condition DO commands ENDWHILE" << endl;}
-             | REPEAT commands UNTIL condition';' 
-            //  {cout << "13: REPEAT commands UNTIL condition';'" << endl;}
-             | FOR PID FROM value TO value DO commands ENDFOR 
-            //  {cout << "14: FOR PID FROM value TO value DO commands ENDFOR" << endl;}
-             | FOR PID FROM value DOWNTO value DO commands ENDFOR 
-            //  {cout << "15: FOR PID FROM value DOWNTO value DO commands ENDFOR" << endl;}
-             | proc_call';' 
-            //  {cout << "16: proc_call';'" << endl;}
-             | READ identifier';' {cout << "17: READ" << endl;}
-             | WRITE value';' {cout << "18: WRITE" << endl;}
+command:     identifier ASSIGN expression';' {
+                  tac.push_back(*$1 + " := " + *$3);
+                  $$ = $1;
+               }
+             | IF condition THEN commands ELSE commands ENDIF { 
+                  $$ = nullptr; 
+               }
+             | IF condition THEN commands ENDIF { 
+                  $$ = nullptr; 
+               }
+             | WHILE condition DO commands ENDWHILE { 
+                  $$ = nullptr; 
+               }
+             | REPEAT commands UNTIL condition';' { 
+                  $$ = nullptr; 
+               }
+             | FOR PID FROM value TO value DO commands ENDFOR { 
+                  $$ = nullptr; 
+               }
+             | FOR PID FROM value DOWNTO value DO commands ENDFOR { 
+                  $$ = nullptr; 
+               }
+             | proc_call';' { 
+                  $$ = nullptr; 
+               }
+             | READ identifier';' { 
+                  $$ = nullptr; 
+               }
+             | WRITE value';' { 
+                  $$ = nullptr; 
+               }
+             ;
 
-proc_head:   PID '(' args_decl ')' 
-// {cout << "19: PID '(' args_decl ')'" << endl;}
-proc_call:   PID '(' args ')' 
-// {cout << "20: PID '(' args ')'" << endl;}
+proc_head:   PID '(' args_decl ')' { 
+                  $$ = nullptr; 
+               }
+            ;
 
-declarations:declarations',' PID  {cout << "21: PID(" << $3 << ")" << endl;}
-             | declarations',' PID'['NUM':'NUM']' 
-            //  {cout << "22: declarations',' PID'['NUM':'NUM']'" << endl;}
-             | PID {cout << "23: PID(" << $1 << ")" << endl;}
-             | PID'['NUM':'NUM']'   
-            //  {cout << "24: PID'['NUM':'NUM']'" << endl;}
+proc_call:   PID '(' args ')' { 
+                  $$ = nullptr; 
+               }
+            ;
 
-args_decl:   args_decl',' PID 
-// {cout << "25: args_decl',' PID" << endl;}
-             | args_decl',' T PID 
-            //  {cout << "26: args_decl',' T PID" << endl;}
-             | PID 
-            //  {cout << "27: PID" << endl;}
-             | T PID 
-            //  {cout << "28: T PID" << endl;}
+declarations:declarations',' PID { $$ = $3; }
+             | declarations',' PID'['NUM':'NUM']' { 
+                  $$ = nullptr; 
+               }
+             | PID { $$ = $1; }
+             | PID'['NUM':'NUM']' { 
+                  $$ = nullptr; 
+               } 
+             ;
 
-args:        args',' PID 
-// {cout << "29: args',' PID" << endl;}
-             | PID 
-            //  {cout << "30: PID" << endl;}
+args_decl:   args_decl',' PID { 
+                  $$ = nullptr; 
+               }
+             | args_decl',' T PID { 
+                  $$ = nullptr; 
+               }
+             | PID { 
+                  $$ = nullptr; 
+               }
+             | T PID { 
+                  $$ = nullptr; 
+               }
+             ;
 
-expression:  value 
-// {cout << "31" << endl;}
-             | value '+' value {cout << "32: +" << endl;}
-             | value '-' value {cout << "33: -" << endl;}
-             | value '*' value {cout << "34: *" << endl;}
-             | value '/' value {cout << "35: /" << endl;}
-             | value '%' value {cout << "36: %" << endl;}
+args:        args',' PID { 
+                  $$ = nullptr; 
+               }
+             | PID { 
+                  $$ = nullptr; 
+               }
+             ;
 
-condition:   value '=' value {cout << "37: =" << endl;}
-             | value NEQ value {cout << "38: !=" << endl;}
-             | value '>' value {cout << "39: >" << endl;}
-             | value '<' value {cout << "40: <" << endl;}
-             | value GE value {cout << "41: >=" << endl;}
-             | value LE value {cout << "42: <=" << endl;}
+expression:  value {
+                  $$ = $1;
+               }
+             | value '+' value {
+                  std::string *temp = new std::string("t" + std::to_string(tempCounter++));
+                  tac.push_back(*temp + " := " + *$1 + " + " + *$3);
+                  $$ = temp;
+               }
+             | value '-' value {
+                  std::string *temp = new std::string("t" + std::to_string(tempCounter++));  
+                  tac.push_back(*temp + " := " + *$1 + " - " + *$3);
+                  $$ = temp;
+               }
+             | value '*' value {
+                  std::string *temp = new std::string("t" + std::to_string(tempCounter++));
+                  tac.push_back(*temp + " := " + *$1 + " * " + *$3);
+                  $$ = temp;
+               }
+             | value '/' value {
+                  std::string *temp = new std::string("t" + std::to_string(tempCounter++));
+                  tac.push_back(*temp + " := " + *$1 + " / " + *$3);
+                  $$ = temp;
+               }
+             | value '%' value {
+                  std::string *temp = new std::string("t" + std::to_string(tempCounter++));
+                  tac.push_back(*temp + " := " + *$1 + " % " + *$3);
+                  $$ = temp;
+               }
+               ;
 
-value:       NUM {cout <<"43: NUM(" << $1 << ")" << endl;}
-             | identifier 
-            //  {cout << "44" << endl;}
+condition:   value '=' value { 
+                  $$ = nullptr; 
+               }
+             | value NEQ value { 
+                  $$ = nullptr; 
+               }
+             | value '>' value { 
+                  $$ = nullptr; 
+               }
+             | value '<' value { 
+                  $$ = nullptr; 
+               }
+             | value GE value { 
+                  $$ = nullptr; 
+               }
+             | value LE value { 
+                  $$ = nullptr; 
+               }
+               ;
 
-identifier:  PID {cout << "45: PID(" << $1 << ")" << endl;}
-             | PID'['PID']' 
-            //  {cout << "46: PID'['PID']'" << endl;}
-             | PID'['NUM']' 
-            //  {cout << "47: PID'['NUM']'" << endl;}
+value:       NUM {
+                  $$ = new std::string(std::to_string($1));
+               }
+             | identifier {
+                  $$ = $1;
+               }
+               ;
+
+identifier:  PID {
+                  $$ = $1;
+               } 
+             | PID'['PID']' { 
+                  $$ = nullptr; 
+               }
+             | PID'['NUM']' { 
+                  $$ = nullptr; 
+               }
+               ;
 %%
 
 int main() {
    yyparse();
+   printTAC();
    return 0;
 }
 

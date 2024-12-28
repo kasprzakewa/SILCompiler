@@ -15,7 +15,7 @@
                 yylval.ival = std::atoi(yytext); return NUM; 
             }
 [_a-z]+     {
-                yylval.sval = strdup(yytext); 
+                yylval.sval = new std::string(yytext); 
                 return PID;
             }
 
