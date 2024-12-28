@@ -1,5 +1,6 @@
 %{
     #include "parser.hpp"
+    #include "symbol_table.hpp"
     #include <iostream>
     #include <cstdlib>
     using namespace std;
@@ -15,7 +16,7 @@
                 yylval.ival = std::atoi(yytext); return NUM; 
             }
 [_a-z]+     {
-                yylval.sval = new std::string(yytext); 
+                yylval.sval = new std::string(yytext);
                 return PID;
             }
 
