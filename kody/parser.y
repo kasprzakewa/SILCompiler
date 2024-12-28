@@ -2,6 +2,8 @@
    #include <iostream>
    #include <vector>
    #include <string>
+   #include "symbol_table.hpp"
+   
    using namespace std;
 
    int yywrap() { return 1; }
@@ -9,12 +11,105 @@
    void yyerror(const char *s);
 
    int tempCounter = 0;
-   std::vector<std::string> tac;
+   vector<string> tac;
 
    void printTAC() {
-         std::cout << "Three Address Code:" << std::endl;
+      cout << "Three Address Code:" << endl;
       for (const auto& code : tac) {
-         std::cout << code << std::endl;
+         cout << code << endl;
+      }
+   }
+
+   bool isNumber(const string& s) {
+      return !s.empty() && all_of(s.begin(), s.end(), ::isdigit);
+   }
+
+   void initialize_temp(int id, string value1, string value3) {
+      if (isNumber(value1)) {
+
+         if (isNumber(value3)) {
+
+            initialize_symbol(id);
+
+         } else {
+
+            int id3 = find_symbol(value3);
+
+            if (id3 != -1) {
+
+               if (is_initialized(id3)) {
+                  initialize_symbol(id);
+               } else {
+                  yyerror(("Variable " + value3 + " not initialized").c_str());
+               }
+
+            } else {
+               yyerror(("Variable " + value3 + " not declared").c_str());
+            }
+         }
+
+      } else if (isNumber(value3)) {
+
+         int id1 = find_symbol(value1);
+         
+         if (id1 != -1) {
+
+            if (is_initialized(id1)) {
+               initialize_symbol(id);
+            } else {
+               yyerror(("Variable " + value1 + " not initialized").c_str());
+            }
+
+         } else {
+            yyerror(("Variable " + value1 + " not declared").c_str());
+         }
+         
+      } else {
+
+         int id1 = find_symbol(value1);
+         int id3 = find_symbol(value3);
+
+         if (id1 != -1 && id3 != -1) {
+
+            if (is_initialized(id1) && is_initialized(id3)) {
+               initialize_symbol(id);
+            } else {
+               if (!is_initialized(id1)) {
+                  yyerror(("Variable " + value1 + " not initialized").c_str());
+               } else {
+                  yyerror(("Variable " + value3 + " not initialized").c_str());
+               }
+            }
+
+         } else {
+            if (id1 == -1) {
+               yyerror(("Variable " + value1 + " not declared").c_str());
+            } else {
+               yyerror(("Variable " + value3 + " not declared").c_str());
+            }
+         }   
+      }
+   }
+
+   void initialize_assign(int id,  string value, string value2) {
+      if (id != -1) {
+         if (isNumber(value2)) {
+            initialize_symbol(id);
+         } else {
+            int id2 = find_symbol(value2);
+
+            if (id2 != -1) {
+               if (is_initialized(id2)) {
+                  initialize_symbol(id);
+               } else {
+                  yyerror(("Variable " + value2 + " not initialized").c_str());
+               }
+            } else {
+               yyerror(("Variable " + value2 + " not declared").c_str());
+            }
+         }
+      } else {
+         yyerror(("Variable " + value + " not declared").c_str());
       }
    }
 %}
@@ -30,7 +125,7 @@
 
 %union {
    int ival;
-   std::string *sval;
+   string *sval;
 }
 
 %type <sval> value identifier expression condition command args_decl args proc_head proc_call declarations commands main procedures program_all
@@ -76,6 +171,8 @@ commands:    commands command {
 command:     identifier ASSIGN expression';' {
                   tac.push_back(*$1 + " := " + *$3);
                   $$ = $1;
+                  int id = find_symbol(*$1);
+                  initialize_assign(id, *$1, *$3);
                }
              | IF condition THEN commands ELSE commands ENDIF { 
                   $$ = nullptr; 
@@ -116,11 +213,25 @@ proc_call:   PID '(' args ')' {
                }
             ;
 
-declarations:declarations',' PID { $$ = $3; }
+declarations:declarations',' PID { 
+                  $$ = $3;
+                  if (find_symbol(*$3) == -1) {
+                     add_symbol(*$3);
+                  } else {
+                     yyerror(("Variable " + *$3 + " already declared").c_str());
+                  }
+               }
              | declarations',' PID'['NUM':'NUM']' { 
                   $$ = nullptr; 
                }
-             | PID { $$ = $1; }
+             | PID { 
+                  $$ = $1;
+                  if (find_symbol(*$1) == -1) {
+                     add_symbol(*$1);
+                  } else {
+                     yyerror(("Variable " + *$1 + " already declared").c_str());
+                  }
+               }
              | PID'['NUM':'NUM']' { 
                   $$ = nullptr; 
                } 
@@ -152,28 +263,38 @@ expression:  value {
                   $$ = $1;
                }
              | value '+' value {
-                  std::string *temp = new std::string("t" + std::to_string(tempCounter++));
+                  string *temp = new string("t" + to_string(tempCounter++));
                   tac.push_back(*temp + " := " + *$1 + " + " + *$3);
+                  add_symbol(*temp);
+                  initialize_temp(last_symbol - 1, *$1, *$3);
                   $$ = temp;
                }
              | value '-' value {
-                  std::string *temp = new std::string("t" + std::to_string(tempCounter++));  
+                  string *temp = new string("t" + to_string(tempCounter++));  
                   tac.push_back(*temp + " := " + *$1 + " - " + *$3);
+                  add_symbol(*temp);
+                  initialize_temp(last_symbol - 1, *$1, *$3);
                   $$ = temp;
                }
              | value '*' value {
-                  std::string *temp = new std::string("t" + std::to_string(tempCounter++));
+                  string *temp = new string("t" + to_string(tempCounter++));
                   tac.push_back(*temp + " := " + *$1 + " * " + *$3);
+                  add_symbol(*temp);
+                  initialize_temp(last_symbol - 1, *$1, *$3);
                   $$ = temp;
                }
              | value '/' value {
-                  std::string *temp = new std::string("t" + std::to_string(tempCounter++));
+                  string *temp = new string("t" + to_string(tempCounter++));
                   tac.push_back(*temp + " := " + *$1 + " / " + *$3);
+                  add_symbol(*temp);
+                  initialize_temp(last_symbol - 1, *$1, *$3);
                   $$ = temp;
                }
              | value '%' value {
-                  std::string *temp = new std::string("t" + std::to_string(tempCounter++));
+                  string *temp = new string("t" + to_string(tempCounter++));
                   tac.push_back(*temp + " := " + *$1 + " % " + *$3);
+                  add_symbol(*temp);
+                  initialize_temp(last_symbol - 1, *$1, *$3);
                   $$ = temp;
                }
                ;
@@ -199,7 +320,7 @@ condition:   value '=' value {
                ;
 
 value:       NUM {
-                  $$ = new std::string(std::to_string($1));
+                  $$ = new string(to_string($1));
                }
              | identifier {
                   $$ = $1;
@@ -220,6 +341,9 @@ identifier:  PID {
 
 int main() {
    yyparse();
+   cout << endl;
+   print_symbol_table();
+   cout << endl;
    printTAC();
    return 0;
 }
