@@ -1,19 +1,44 @@
 %{
-   #include <iostream>
-   using namespace std;
+   extern int yylineno;
 
    int yywrap() { return 1; }
    int yylex();
    void yyerror(const char *s);
 %}
 
+%locations
 %define parse.error verbose
+
+%code requires {
+   #include <iostream>
+   #include <vector>
+   #include <string>
+   #include "ast_nodes.hpp"
+   using namespace std;
+}
 
 %union {
    int ival;
-   char *sval;
+   string *sval;
+   ASTNode *node;
+   CommandsNode *commands;
+   CommandNode *command;
+   DeclarationsNode *declarations;
+   ExpressionNode *expression;
+   ConditionNode *condition;
+   ValueNode *value;
+   IdentifierNode *identifier;
 }
 
+%type <sval> args_decl args proc_head proc_call procedures program_all
+%type <node> main
+%type <commands> commands
+%type <command> command
+%type <declarations> declarations
+%type <expression> expression
+%type <condition> condition
+%type <value> value
+%type <identifier> identifier 
 %token <ival> NUM
 %token <sval> PID
 
@@ -22,95 +47,197 @@
 
 %%
 
-program_all:  procedures main 
-// {cout << "1" << endl;}
+program_all:  procedures main {
+                  $2->print();
+                  $2->translate();
+               }
 
-procedures:  procedures PROCEDURE proc_head IS declarations BEG commands END {cout << "2: PROCEDURE" << endl;}
-             | procedures PROCEDURE proc_head IS BEG commands END {cout << "3: PROCEDURE" << endl;}
-             | 
-            //  {cout << 4 << endl;}
+procedures:  procedures PROCEDURE proc_head IS declarations BEG commands END { 
+                  $$ = nullptr; 
+               }
+             | procedures PROCEDURE proc_head IS BEG commands END { 
+                  $$ = nullptr; 
+               }
+             | { 
+                  $$ = nullptr; 
+               }
+             ;
 
-main:        PROGRAM IS declarations BEG commands END {cout << "5: PROGRAM" << endl;}
-             | PROGRAM IS BEG commands END {cout << "6: PROGRAM" << endl;}
+main:        PROGRAM IS declarations BEG commands END { 
+                  $$ = new MainDecNode($3, $5); 
+               }
+             | PROGRAM IS BEG commands END { 
+                  $$ = new MainNode($4); 
+               }
+             ;
 
-commands:    commands command 
-// {cout << "7" << endl;}
-             | command 
-            //  {cout << "8" << endl;}
+commands:    commands command {
+                  $$ = $1;
+                  $$->add_child($2);
+               }
+             | command {
+                  $$ = new CommandsNode();
+                  $$->add_child($1); 
+               }
+             ;
 
-command:     identifier ASSIGN expression';' {cout << "9: :=" << endl;}
-             | IF condition THEN commands ELSE commands ENDIF {cout << "10: IF THEN ELSE" << endl;}
-             | IF condition THEN commands ENDIF {cout << "11: IF THEN" << endl;}
-             | WHILE condition DO commands ENDWHILE 
-            //  {cout << "12: WHILE condition DO commands ENDWHILE" << endl;}
-             | REPEAT commands UNTIL condition';' 
-            //  {cout << "13: REPEAT commands UNTIL condition';'" << endl;}
-             | FOR PID FROM value TO value DO commands ENDFOR 
-            //  {cout << "14: FOR PID FROM value TO value DO commands ENDFOR" << endl;}
-             | FOR PID FROM value DOWNTO value DO commands ENDFOR 
-            //  {cout << "15: FOR PID FROM value DOWNTO value DO commands ENDFOR" << endl;}
-             | proc_call';' 
-            //  {cout << "16: proc_call';'" << endl;}
-             | READ identifier';' {cout << "17: READ" << endl;}
-             | WRITE value';' {cout << "18: WRITE" << endl;}
+command:     identifier ASSIGN expression ';' {
+                  if (!$3->is_initialized().first) {
+                     yyerror(("Variable " + $3->is_initialized().second + " not initialized").c_str());
+                  }
+                  initialize_node($1);
+                  $$ = new AssignNode($1, $3);
+               }
+             | IF condition THEN commands ELSE commands ENDIF {
+                  $$ = new IfElseNode($2, $4, $6); 
+               }
+             | IF condition THEN commands ENDIF {
+                  $$ = new IfNode($2, $4);
+               }
+             | WHILE condition DO commands ENDWHILE { 
+                  $$ = new WhileNode($2, $4);
+               }
+             | REPEAT commands UNTIL condition ';' { 
+                  $$ = new RepeatUntilNode($2, $4); 
+               }
+             | FOR PID FROM value TO value DO commands ENDFOR { 
+                  $$ = new ForToNode(new IdentifierNode(*$2, true), $4, $6, $8); 
+               }
+             | FOR PID FROM value DOWNTO value DO commands ENDFOR { 
+                  $$ = new ForDownToNode(new IdentifierNode(*$2, true), $4, $6, $8);
+               }
+             | proc_call ';' { 
+                  $$ = nullptr; 
+               }
+             | READ identifier ';' { 
+                  $$ = new ReadNode($2);
+                  initialize_node($2);
+               }
+             | WRITE value ';' { 
+                  $$ = new WriteNode($2);
+               }
+             ;
 
-proc_head:   PID '(' args_decl ')' 
-// {cout << "19: PID '(' args_decl ')'" << endl;}
-proc_call:   PID '(' args ')' 
-// {cout << "20: PID '(' args ')'" << endl;}
+proc_head:   PID '(' args_decl ')' { 
+                  $$ = nullptr; 
+               }
+            ;
 
-declarations:declarations',' PID  {cout << "21: PID(" << $3 << ")" << endl;}
-             | declarations',' PID'['NUM':'NUM']' 
-            //  {cout << "22: declarations',' PID'['NUM':'NUM']'" << endl;}
-             | PID {cout << "23: PID(" << $1 << ")" << endl;}
-             | PID'['NUM':'NUM']'   
-            //  {cout << "24: PID'['NUM':'NUM']'" << endl;}
+proc_call:   PID '(' args ')' { 
+                  $$ = nullptr; 
+               }
+            ;
 
-args_decl:   args_decl',' PID 
-// {cout << "25: args_decl',' PID" << endl;}
-             | args_decl',' T PID 
-            //  {cout << "26: args_decl',' T PID" << endl;}
-             | PID 
-            //  {cout << "27: PID" << endl;}
-             | T PID 
-            //  {cout << "28: T PID" << endl;}
+declarations:declarations ',' PID {
+                  $$ = $1;
+                  IdentifierNode* id = new IdentifierNode(*$3, false);
+                  if (find_node(id->get_name()) == nullptr) {
+                     add_node(id);
+                     $$->add_child(id);
+                  } else {
+                     yyerror(("Variable " + id->get_name() + " already declared").c_str());
+                  }
+               }
+             | PID {
+                  $$ = new DeclarationsNode();
+                  IdentifierNode* id = new IdentifierNode(*$1, false);
+                  if (find_node(id->get_name()) == nullptr) {
+                     add_node(id);
+                     $$->add_child(id);
+                  } else {
+                     yyerror(("Variable " + id->get_name() + " already declared").c_str());
+                  }
+               }
+             ;
 
-args:        args',' PID 
-// {cout << "29: args',' PID" << endl;}
-             | PID 
-            //  {cout << "30: PID" << endl;}
+args_decl:   args_decl ',' PID { 
+                  $$ = nullptr; 
+               }
+             | PID { 
+                  $$ = nullptr; 
+               }
+             ;
 
-expression:  value 
-// {cout << "31" << endl;}
-             | value '+' value {cout << "32: +" << endl;}
-             | value '-' value {cout << "33: -" << endl;}
-             | value '*' value {cout << "34: *" << endl;}
-             | value '/' value {cout << "35: /" << endl;}
-             | value '%' value {cout << "36: %" << endl;}
+args:        args ',' PID { 
+                  $$ = nullptr; 
+               }
+             | PID { 
+                  $$ = nullptr; 
+               }
+             ;
 
-condition:   value '=' value {cout << "37: =" << endl;}
-             | value NEQ value {cout << "38: !=" << endl;}
-             | value '>' value {cout << "39: >" << endl;}
-             | value '<' value {cout << "40: <" << endl;}
-             | value GE value {cout << "41: >=" << endl;}
-             | value LE value {cout << "42: <=" << endl;}
+expression:  value {
+                  $$ = new ExpressionNode($1);
+               }
+             | value '+' value {
+                  $$ = new ExpressionNode($1, $3, "+");
+               }
+             | value '-' value {
+                  $$ = new ExpressionNode($1, $3, "-");
+               }
+             | value '*' value {
+                  $$ = new ExpressionNode($1, $3, "*");
+               }
+             | value '/' value {
+                  $$ = new ExpressionNode($1, $3, "/");
+               }
+             | value '%' value {
+                  $$ = new ExpressionNode($1, $3, "%");
+               }
+               ;
 
-value:       NUM {cout <<"43: NUM(" << $1 << ")" << endl;}
-             | identifier 
-            //  {cout << "44" << endl;}
+condition:   value '=' value { 
+                  $$ = new ConditionNode($1, $3, "=");
+               }
+             | value NEQ value { 
+                  $$ = new ConditionNode($1, $3, "!="); 
+               }
+             | value '>' value { 
+                  $$ = new ConditionNode($1, $3, ">");
+               }
+             | value '<' value {
+                  $$ = new ConditionNode($1, $3, "<");
+               }
+             | value GE value { 
+                  $$ = new ConditionNode($1, $3, ">=");
+               }
+             | value LE value { 
+                  $$ = new ConditionNode($1, $3, "<=");
+               }
+               ;
 
-identifier:  PID {cout << "45: PID(" << $1 << ")" << endl;}
-             | PID'['PID']' 
-            //  {cout << "46: PID'['PID']'" << endl;}
-             | PID'['NUM']' 
-            //  {cout << "47: PID'['NUM']'" << endl;}
+value:       NUM { 
+                  $$ = new ValueNode(to_string($1));
+               }
+             | identifier {
+                  if ($1 == nullptr) {
+                     $$ = nullptr;
+                  } else {
+                     $$ = new ValueNode($1);
+                  }
+               }
+               ;
+
+identifier:  PID {
+                  IdentifierNode* id = find_node(*$1);
+                  if (id == nullptr) {
+                     yyerror(("Variable " + *$1 + " not declared").c_str());
+                  } else {
+                     $$ = id;
+                  }
+               }
+             ;
 %%
 
 int main() {
    yyparse();
+   cout << endl;
+   print_tac();
    return 0;
 }
 
-void yyerror(const char *s) {
-   cerr << s << endl;
+void yyerror(const char *str)
+{
+   fprintf(stderr, "\033[0;31mERROR AT LINE %d: %s\033[0m\n", yylineno - 1, str);
+   exit(EXIT_FAILURE);
 }
