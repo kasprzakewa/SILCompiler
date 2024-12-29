@@ -7,6 +7,7 @@
     extern int yylex();
 %}
 
+%option yylineno
 %option noyywrap
 
 %%

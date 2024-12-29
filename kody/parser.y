@@ -1,135 +1,44 @@
 %{
-   #include <iostream>
-   #include <vector>
-   #include <string>
-   #include "symbol_table.hpp"
-   
-   using namespace std;
+   extern int yylineno;
 
    int yywrap() { return 1; }
    int yylex();
    void yyerror(const char *s);
-
-   int tempCounter = 0;
-   vector<string> tac;
-
-   void printTAC() {
-      cout << "Three Address Code:" << endl;
-      for (const auto& code : tac) {
-         cout << code << endl;
-      }
-   }
-
-   bool isNumber(const string& s) {
-      return !s.empty() && all_of(s.begin(), s.end(), ::isdigit);
-   }
-
-   void initialize_temp(int id, string value1, string value3) {
-      if (isNumber(value1)) {
-
-         if (isNumber(value3)) {
-
-            initialize_symbol(id);
-
-         } else {
-
-            int id3 = find_symbol(value3);
-
-            if (id3 != -1) {
-
-               if (is_initialized(id3)) {
-                  initialize_symbol(id);
-               } else {
-                  yyerror(("Variable " + value3 + " not initialized").c_str());
-               }
-
-            } else {
-               yyerror(("Variable " + value3 + " not declared").c_str());
-            }
-         }
-
-      } else if (isNumber(value3)) {
-
-         int id1 = find_symbol(value1);
-         
-         if (id1 != -1) {
-
-            if (is_initialized(id1)) {
-               initialize_symbol(id);
-            } else {
-               yyerror(("Variable " + value1 + " not initialized").c_str());
-            }
-
-         } else {
-            yyerror(("Variable " + value1 + " not declared").c_str());
-         }
-         
-      } else {
-
-         int id1 = find_symbol(value1);
-         int id3 = find_symbol(value3);
-
-         if (id1 != -1 && id3 != -1) {
-
-            if (is_initialized(id1) && is_initialized(id3)) {
-               initialize_symbol(id);
-            } else {
-               if (!is_initialized(id1)) {
-                  yyerror(("Variable " + value1 + " not initialized").c_str());
-               } else {
-                  yyerror(("Variable " + value3 + " not initialized").c_str());
-               }
-            }
-
-         } else {
-            if (id1 == -1) {
-               yyerror(("Variable " + value1 + " not declared").c_str());
-            } else {
-               yyerror(("Variable " + value3 + " not declared").c_str());
-            }
-         }   
-      }
-   }
-
-   void initialize_assign(int id,  string value, string value2) {
-      if (id != -1) {
-         if (isNumber(value2)) {
-            initialize_symbol(id);
-         } else {
-            int id2 = find_symbol(value2);
-
-            if (id2 != -1) {
-               if (is_initialized(id2)) {
-                  initialize_symbol(id);
-               } else {
-                  yyerror(("Variable " + value2 + " not initialized").c_str());
-               }
-            } else {
-               yyerror(("Variable " + value2 + " not declared").c_str());
-            }
-         }
-      } else {
-         yyerror(("Variable " + value + " not declared").c_str());
-      }
-   }
 %}
 
+%locations
 %define parse.error verbose
 
 %code requires {
    #include <iostream>
    #include <vector>
    #include <string>
+   #include "ast_nodes.hpp"
    using namespace std;
 }
 
 %union {
    int ival;
    string *sval;
+   ASTNode *node;
+   CommandsNode *commands;
+   CommandNode *command;
+   DeclarationsNode *declarations;
+   ExpressionNode *expression;
+   ConditionNode *condition;
+   ValueNode *value;
+   IdentifierNode *identifier;
 }
 
-%type <sval> value identifier expression condition command args_decl args proc_head proc_call declarations commands main procedures program_all
-
+%type <sval> args_decl args proc_head proc_call procedures program_all
+%type <node> main
+%type <commands> commands
+%type <command> command
+%type <declarations> declarations
+%type <expression> expression
+%type <condition> condition
+%type <value> value
+%type <identifier> identifier 
 %token <ival> NUM
 %token <sval> PID
 
@@ -138,13 +47,15 @@
 
 %%
 
-program_all:  procedures main
+program_all:  procedures main {
+                  $2->print();
+                  $2->translate();
+               }
 
 procedures:  procedures PROCEDURE proc_head IS declarations BEG commands END { 
                   $$ = nullptr; 
                }
-             | procedures PROCEDURE proc_head IS BEG commands END 
-               { 
+             | procedures PROCEDURE proc_head IS BEG commands END { 
                   $$ = nullptr; 
                }
              | { 
@@ -153,53 +64,57 @@ procedures:  procedures PROCEDURE proc_head IS declarations BEG commands END {
              ;
 
 main:        PROGRAM IS declarations BEG commands END { 
-                  $$ = nullptr; 
+                  $$ = new MainDecNode($3, $5); 
                }
              | PROGRAM IS BEG commands END { 
-                  $$ = nullptr; 
+                  $$ = new MainNode($4); 
                }
              ;
 
-commands:    commands command { 
-                  $$ = nullptr; 
-               }
-             | command { 
-                  $$ = nullptr; 
-               }
-             ;
-
-command:     identifier ASSIGN expression';' {
-                  tac.push_back(*$1 + " := " + *$3);
+commands:    commands command {
                   $$ = $1;
-                  int id = find_symbol(*$1);
-                  initialize_assign(id, *$1, *$3);
+                  $$->add_child($2);
                }
-             | IF condition THEN commands ELSE commands ENDIF { 
-                  $$ = nullptr; 
+             | command {
+                  $$ = new CommandsNode();
+                  $$->add_child($1); 
                }
-             | IF condition THEN commands ENDIF { 
-                  $$ = nullptr; 
+             ;
+
+command:     identifier ASSIGN expression ';' {
+                  if (!$3->is_initialized().first) {
+                     yyerror(("Variable " + $3->is_initialized().second + " not initialized").c_str());
+                  }
+                  initialize_node($1);
+                  $$ = new AssignNode($1, $3);
+               }
+             | IF condition THEN commands ELSE commands ENDIF {
+                  $$ = new IfElseNode($2, $4, $6); 
+               }
+             | IF condition THEN commands ENDIF {
+                  $$ = new IfNode($2, $4);
                }
              | WHILE condition DO commands ENDWHILE { 
-                  $$ = nullptr; 
+                  $$ = new WhileNode($2, $4);
                }
-             | REPEAT commands UNTIL condition';' { 
-                  $$ = nullptr; 
+             | REPEAT commands UNTIL condition ';' { 
+                  $$ = new RepeatUntilNode($2, $4); 
                }
              | FOR PID FROM value TO value DO commands ENDFOR { 
-                  $$ = nullptr; 
+                  $$ = new ForToNode(new IdentifierNode(*$2, true), $4, $6, $8); 
                }
              | FOR PID FROM value DOWNTO value DO commands ENDFOR { 
+                  $$ = new ForDownToNode(new IdentifierNode(*$2, true), $4, $6, $8);
+               }
+             | proc_call ';' { 
                   $$ = nullptr; 
                }
-             | proc_call';' { 
-                  $$ = nullptr; 
+             | READ identifier ';' { 
+                  $$ = new ReadNode($2);
+                  initialize_node($2);
                }
-             | READ identifier';' { 
-                  $$ = nullptr; 
-               }
-             | WRITE value';' { 
-                  $$ = nullptr; 
+             | WRITE value ';' { 
+                  $$ = new WriteNode($2);
                }
              ;
 
@@ -213,45 +128,37 @@ proc_call:   PID '(' args ')' {
                }
             ;
 
-declarations:declarations',' PID { 
-                  $$ = $3;
-                  if (find_symbol(*$3) == -1) {
-                     add_symbol(*$3);
-                  } else {
-                     yyerror(("Variable " + *$3 + " already declared").c_str());
-                  }
-               }
-             | declarations',' PID'['NUM':'NUM']' { 
-                  $$ = nullptr; 
-               }
-             | PID { 
+declarations:declarations ',' PID {
                   $$ = $1;
-                  if (find_symbol(*$1) == -1) {
-                     add_symbol(*$1);
+                  IdentifierNode* id = new IdentifierNode(*$3, false);
+                  if (find_node(id->get_name()) == nullptr) {
+                     add_node(id);
+                     $$->add_child(id);
                   } else {
-                     yyerror(("Variable " + *$1 + " already declared").c_str());
+                     yyerror(("Variable " + id->get_name() + " already declared").c_str());
                   }
                }
-             | PID'['NUM':'NUM']' { 
-                  $$ = nullptr; 
-               } 
+             | PID {
+                  $$ = new DeclarationsNode();
+                  IdentifierNode* id = new IdentifierNode(*$1, false);
+                  if (find_node(id->get_name()) == nullptr) {
+                     add_node(id);
+                     $$->add_child(id);
+                  } else {
+                     yyerror(("Variable " + id->get_name() + " already declared").c_str());
+                  }
+               }
              ;
 
-args_decl:   args_decl',' PID { 
-                  $$ = nullptr; 
-               }
-             | args_decl',' T PID { 
+args_decl:   args_decl ',' PID { 
                   $$ = nullptr; 
                }
              | PID { 
                   $$ = nullptr; 
                }
-             | T PID { 
-                  $$ = nullptr; 
-               }
              ;
 
-args:        args',' PID { 
+args:        args ',' PID { 
                   $$ = nullptr; 
                }
              | PID { 
@@ -260,94 +167,77 @@ args:        args',' PID {
              ;
 
 expression:  value {
-                  $$ = $1;
+                  $$ = new ExpressionNode($1);
                }
              | value '+' value {
-                  string *temp = new string("t" + to_string(tempCounter++));
-                  tac.push_back(*temp + " := " + *$1 + " + " + *$3);
-                  add_symbol(*temp);
-                  initialize_temp(last_symbol - 1, *$1, *$3);
-                  $$ = temp;
+                  $$ = new ExpressionNode($1, $3, "+");
                }
              | value '-' value {
-                  string *temp = new string("t" + to_string(tempCounter++));  
-                  tac.push_back(*temp + " := " + *$1 + " - " + *$3);
-                  add_symbol(*temp);
-                  initialize_temp(last_symbol - 1, *$1, *$3);
-                  $$ = temp;
+                  $$ = new ExpressionNode($1, $3, "-");
                }
              | value '*' value {
-                  string *temp = new string("t" + to_string(tempCounter++));
-                  tac.push_back(*temp + " := " + *$1 + " * " + *$3);
-                  add_symbol(*temp);
-                  initialize_temp(last_symbol - 1, *$1, *$3);
-                  $$ = temp;
+                  $$ = new ExpressionNode($1, $3, "*");
                }
              | value '/' value {
-                  string *temp = new string("t" + to_string(tempCounter++));
-                  tac.push_back(*temp + " := " + *$1 + " / " + *$3);
-                  add_symbol(*temp);
-                  initialize_temp(last_symbol - 1, *$1, *$3);
-                  $$ = temp;
+                  $$ = new ExpressionNode($1, $3, "/");
                }
              | value '%' value {
-                  string *temp = new string("t" + to_string(tempCounter++));
-                  tac.push_back(*temp + " := " + *$1 + " % " + *$3);
-                  add_symbol(*temp);
-                  initialize_temp(last_symbol - 1, *$1, *$3);
-                  $$ = temp;
+                  $$ = new ExpressionNode($1, $3, "%");
                }
                ;
 
 condition:   value '=' value { 
-                  $$ = nullptr; 
+                  $$ = new ConditionNode($1, $3, "=");
                }
              | value NEQ value { 
-                  $$ = nullptr; 
+                  $$ = new ConditionNode($1, $3, "!="); 
                }
              | value '>' value { 
-                  $$ = nullptr; 
+                  $$ = new ConditionNode($1, $3, ">");
                }
-             | value '<' value { 
-                  $$ = nullptr; 
+             | value '<' value {
+                  $$ = new ConditionNode($1, $3, "<");
                }
              | value GE value { 
-                  $$ = nullptr; 
+                  $$ = new ConditionNode($1, $3, ">=");
                }
              | value LE value { 
-                  $$ = nullptr; 
+                  $$ = new ConditionNode($1, $3, "<=");
                }
                ;
 
-value:       NUM {
-                  $$ = new string(to_string($1));
+value:       NUM { 
+                  $$ = new ValueNode(to_string($1));
                }
              | identifier {
-                  $$ = $1;
+                  if ($1 == nullptr) {
+                     $$ = nullptr;
+                  } else {
+                     $$ = new ValueNode($1);
+                  }
                }
                ;
 
 identifier:  PID {
-                  $$ = $1;
-               } 
-             | PID'['PID']' { 
-                  $$ = nullptr; 
+                  IdentifierNode* id = find_node(*$1);
+                  if (id == nullptr) {
+                     yyerror(("Variable " + *$1 + " not declared").c_str());
+                  } else {
+                     $$ = id;
+                  }
                }
-             | PID'['NUM']' { 
-                  $$ = nullptr; 
-               }
-               ;
+             ;
 %%
 
 int main() {
    yyparse();
    cout << endl;
-   print_symbol_table();
-   cout << endl;
-   printTAC();
+   print_tac();
    return 0;
 }
 
-void yyerror(const char *s) {
-   cerr << s << endl;
+void yyerror(const char *str)
+{
+   fprintf(stderr, "\033[0;31mERROR AT LINE %d: %s\033[0m\n", yylineno - 1, str);
+   exit(EXIT_FAILURE);
 }
