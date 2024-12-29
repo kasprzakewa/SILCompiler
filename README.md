@@ -15,7 +15,7 @@ SILCompiler is a simple, iterative language compiler designed to process a basic
 
 The compiler consists of two main components:
 1. **Lexer**: Written in Flex (lexer.l) - Tokenizes the input code into a sequence of tokens.
-2. **Parser**: Written in Bison (parser.y) - Defines the syntax rules and parses the token sequence to construct an Abstract Syntax Tree (AST) or Intermediate Representation (IR).
+2. **Parser**: Written in Bison (parser.y) - Defines the syntax rules and parses the token sequence to construct an Abstract Syntax Tree (AST).
 
 ### Lexer (`lexer.l`)
 The lexer file defines the regular expressions for various tokens in the language. Some of the key tokens include:
