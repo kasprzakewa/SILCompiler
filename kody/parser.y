@@ -48,7 +48,6 @@
 %%
 
 program_all:  procedures main {
-                  $2->print();
                   $2->translate();
                }
 
@@ -100,7 +99,7 @@ command:     identifier ASSIGN expression ';' {
              | REPEAT commands UNTIL condition ';' { 
                   $$ = new RepeatUntilNode($2, $4); 
                }
-             | FOR PID FROM value TO value DO commands ENDFOR { 
+             | FOR PID FROM value TO value DO commands ENDFOR {
                   $$ = new ForToNode(new IdentifierNode(*$2, true), $4, $6, $8); 
                }
              | FOR PID FROM value DOWNTO value DO commands ENDFOR { 
@@ -170,39 +169,39 @@ expression:  value {
                   $$ = new ExpressionNode($1);
                }
              | value '+' value {
-                  $$ = new ExpressionNode($1, $3, "+");
+                  $$ = new ExpressionNode($1, $3, "ADD");
                }
              | value '-' value {
-                  $$ = new ExpressionNode($1, $3, "-");
+                  $$ = new ExpressionNode($1, $3, "SUB");
                }
              | value '*' value {
-                  $$ = new ExpressionNode($1, $3, "*");
+                  $$ = new ExpressionNode($1, $3, "MUL");
                }
              | value '/' value {
-                  $$ = new ExpressionNode($1, $3, "/");
+                  $$ = new ExpressionNode($1, $3, "DIV");
                }
              | value '%' value {
-                  $$ = new ExpressionNode($1, $3, "%");
+                  $$ = new ExpressionNode($1, $3, "MOD");
                }
                ;
 
 condition:   value '=' value { 
-                  $$ = new ConditionNode($1, $3, "=");
+                  $$ = new ConditionNode($1, $3, "EQ");
                }
              | value NEQ value { 
-                  $$ = new ConditionNode($1, $3, "!="); 
+                  $$ = new ConditionNode($1, $3, "NEQ"); 
                }
              | value '>' value { 
-                  $$ = new ConditionNode($1, $3, ">");
+                  $$ = new ConditionNode($1, $3, "GT");
                }
              | value '<' value {
-                  $$ = new ConditionNode($1, $3, "<");
+                  $$ = new ConditionNode($1, $3, "LT");
                }
              | value GE value { 
-                  $$ = new ConditionNode($1, $3, ">=");
+                  $$ = new ConditionNode($1, $3, "GE");
                }
              | value LE value { 
-                  $$ = new ConditionNode($1, $3, "<=");
+                  $$ = new ConditionNode($1, $3, "LE");
                }
                ;
 
@@ -231,8 +230,12 @@ identifier:  PID {
 
 int main() {
    yyparse();
-   cout << endl;
+   cout << "TAC1:" << endl;
    print_tac();
+   
+   cout << endl;
+   cout << "TAC2:" << endl;
+   print_tac2();
    return 0;
 }
 

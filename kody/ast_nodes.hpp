@@ -7,16 +7,36 @@
 
 using namespace std;
 
+struct TAC {
+    string op;
+    string result;
+    string arg1;
+    string arg2;
+    
+
+    TAC(string op, string result = "", string arg1 = "", string arg2 = "")
+        : op(op), result(result), arg1(arg1), arg2(arg2) {}
+};
+
 extern vector<string> tac;
+extern vector<TAC> tac2;
 void add_to_tac(string line);
+void add_to_tac2(string op, string result = "", string arg1 = "", string arg2 = "");
 void print_tac();
+void print_tac2();
+
+extern int temp_counter;
+string increase_temp_counter();
+
+extern int label_counter;
+string increase_label_counter();
+string get_label(int offset);  
 
 class ASTNode {   
 public:
     string name;
     bool initialized;
     virtual ~ASTNode() {}
-    virtual void print() = 0;
     virtual void translate() {}
     virtual pair<bool, string> is_initialized() { return {initialized, name}; }
     virtual string get_name() { return name; }
@@ -35,12 +55,8 @@ public:
         this->initialized = node->is_initialized().first;
     }
 
-    void print() override {
-        cout << name;
-    }
-
     void translate() override {
-        add_to_tac("identifier: " + name);
+        cout << name;
     }
 };
 
@@ -68,10 +84,6 @@ public:
         this->initialized = identifier->is_initialized().first;
     }
 
-    void print() override {
-        cout << name;
-    }
-
     bool is_number() {
         return number;
     }
@@ -81,7 +93,7 @@ public:
     }
 
     void translate() override {
-        add_to_tac("value: " + name);
+        cout << name;
     }
 };
 
@@ -90,9 +102,11 @@ public:
     ValueNode* left;
     ValueNode* right;
     string op;
+    ValueNode* temp;
 
     ExpressionNode(ValueNode* left, ValueNode* right, const string &op) : left(left), right(right), op(op) {
         this->initialized = left->is_initialized().first && right->is_initialized().first;
+        temp = new ValueNode(increase_temp_counter());
     }
 
     ExpressionNode(ValueNode* left) {
@@ -101,6 +115,7 @@ public:
         this->op = "";
         this->name = left->get_name();
         this->initialized = left->is_initialized().first;
+        this->temp = nullptr;
     }
 
     ~ExpressionNode() {
@@ -108,24 +123,15 @@ public:
         delete right;
     }
 
-    void print() override {
-        if (right == nullptr && left != nullptr) {
-            left->print();
-        } else {
-            cout << "(";
-            left->print();
-            cout << " " << op << " ";
-            right->print();
-            cout << ")";
-        }
-    }
-
     bool is_number() {
         return left->is_number() && right->is_number();
     }
 
     void translate() override {
-        add_to_tac("expression: " + left->get_name() + " " + op + " " + right->get_name());
+        if (!(right == nullptr && left != nullptr)) {
+            add_to_tac(op + " " + temp->get_name() + " " + left->get_name() + " " + right->get_name());
+            add_to_tac2(op, temp->get_name(), left->get_name(), right->get_name());
+        }
     }
 };
 
@@ -134,24 +140,20 @@ public:
     ValueNode* left;
     ValueNode* right;
     string op;
+    ValueNode* temp;
 
-    ConditionNode(ValueNode* left, ValueNode* right, const string &op) : left(left), right(right), op(op) {}
+    ConditionNode(ValueNode* left, ValueNode* right, const string &op) : left(left), right(right), op(op) {
+        temp = new ValueNode(increase_temp_counter());
+    }
 
     ~ConditionNode() {
         delete left;
         delete right;
     }
 
-    void print() override {
-        cout << "(";
-        left->print();
-        cout << " " << op << " ";
-        right->print();
-        cout << ")";
-    }
-
     void translate() override {
-        add_to_tac("condition: " + left->get_name() + " " + op + " " + right->get_name());
+        add_to_tac(op + " " + temp->get_name() + " " + left->get_name() + " " + right->get_name());
+        add_to_tac2(op, temp->get_name(), left->get_name(), right->get_name());
     }
 };
 
@@ -165,25 +167,14 @@ public:
         }
     }
 
-    void print() override {
-        cout << "VAR ";
-        for (int i = 0; i < identifiers.size(); i++) {
-            identifiers[i]->print();
-            if (i != identifiers.size() - 1) {
-                cout << ", ";
-            }
-        }
-        cout << endl;
-    }
-
     void add_child(IdentifierNode* node){
         identifiers.push_back(node);
     }
 
     void translate() override {
-        add_to_tac("declarations: ");
         for (IdentifierNode* identifier : identifiers) {
-            add_to_tac(identifier->get_name());
+            add_to_tac("DECLARE " + identifier->get_name());
+            add_to_tac2("DECLARE", identifier->get_name());
         }
     }
 };
@@ -203,18 +194,11 @@ public:
         }
     }
 
-    void print() override {
-        for (int i = 0; i < commands.size(); i++) {
-            commands[i]->print();
-        }
-    }
-
     void add_child(CommandNode* node){
         commands.push_back(node);
     }
 
     void translate() override {
-        add_to_tac("commands: ");
         for (CommandNode* command : commands) {
             command->translate();
         }
@@ -233,15 +217,15 @@ public:
         delete expression;
     }
 
-    void print() override {
-        identifier->print();
-        cout << " = ";
-        expression->print();
-        cout << endl;
-    }
-
     void translate() override {
-        add_to_tac("assign: " + identifier->get_name() + " = " + expression->left->get_name());
+        if (expression->temp != nullptr) {
+            expression->translate();
+            add_to_tac("ASSIGN " + identifier->get_name() + " " + expression->temp->get_name());
+            add_to_tac2("ASSIGN", identifier->get_name(), expression->temp->get_name());
+        } else {
+            add_to_tac("ASSIGN " + identifier->get_name() + " " + expression->get_name());
+            add_to_tac2("ASSIGN", identifier->get_name(), expression->get_name());
+        } 
     }
 };
 
@@ -257,18 +241,13 @@ public:
         delete commands;
     }
 
-    void print() override {
-        cout << "IF ";
-        condition->print();
-        cout << " THEN " << endl;
-        commands->print();
-        cout << "ENDIF" << endl;
-    }
-
     void translate() override {
-        add_to_tac("if: ");
         condition->translate();
+        add_to_tac("IF " + condition->temp->get_name() + "=0 GOTO " + increase_label_counter());
+        add_to_tac2("IF", condition->temp->get_name(), get_label(1));
         commands->translate();
+        add_to_tac(get_label(1) + ":");
+        add_to_tac2("LABEL", get_label(1));
     }
 };
 
@@ -286,21 +265,18 @@ public:
         delete else_commands;
     }
 
-    void print() override {
-        cout << "IF ";
-        condition->print();
-        cout << " THEN " << endl;
-        if_commands->print();
-        cout << "ELSE" << endl;
-        else_commands->print();
-        cout << "ENDIF" << endl;
-    }
-
     void translate() override {
-        add_to_tac("ifelse: ");
         condition->translate();
+        add_to_tac("IF " + condition->temp->get_name() + "=0 GOTO " + increase_label_counter());
+        add_to_tac2("IF", condition->temp->get_name(), get_label(1));
         if_commands->translate();
+        add_to_tac("GOTO " + increase_label_counter());
+        add_to_tac2("GOTO", get_label(1));
+        add_to_tac(get_label(2) + ":");
+        add_to_tac2("LABEL", get_label(2));
         else_commands->translate();
+        add_to_tac(get_label(1) + ":");
+        add_to_tac2("LABEL", get_label(1));
     }
 };
 
@@ -316,18 +292,17 @@ public:
         delete commands;
     }
 
-    void print() override {
-        cout << "WHILE ";
-        condition->print();
-        cout << " DO " << endl;
-        commands->print();
-        cout << "ENDWHILE" << endl;
-    }
-
     void translate() override {
-        add_to_tac("while: ");
+        add_to_tac(increase_label_counter() + ":");
+        add_to_tac2("LABEL", get_label(1));
         condition->translate();
+        add_to_tac("IF " + condition->temp->get_name() + "=0 GOTO " + increase_label_counter());
+        add_to_tac2("IF", condition->temp->get_name(), get_label(1));
         commands->translate();
+        add_to_tac("GOTO " + get_label(2));
+        add_to_tac2("GOTO", get_label(2));
+        add_to_tac(get_label(1) + ":");
+        add_to_tac2("LABEL", get_label(1));
     }
 };
 
@@ -343,18 +318,17 @@ public:
         delete condition;
     }
 
-    void print() override {
-        cout << "REPEAT" << endl;
-        commands->print();
-        cout << "UNTIL ";
-        condition->print();
-        cout << endl;
-    }
-
     void translate() override {
-        add_to_tac("repeatuntil: ");
+        add_to_tac(increase_label_counter() + ":");
+        add_to_tac2("LABEL", get_label(1));
         commands->translate();
         condition->translate();
+        add_to_tac("IF " + condition->temp->get_name() + "=0 GOTO " + increase_label_counter());
+        add_to_tac2("IF", condition->temp->get_name(), get_label(1));
+        add_to_tac("GOTO " + get_label(2));
+        add_to_tac2("GOTO", get_label(2));
+        add_to_tac(get_label(1) + ":");
+        add_to_tac2("LABEL", get_label(1));
     }
 };
 
@@ -364,8 +338,13 @@ public:
     ValueNode* start;
     ValueNode* end;
     CommandsNode* commands;
+    ConditionNode* condition;
 
-    ForToNode(IdentifierNode* identifier, ValueNode* start, ValueNode* end, CommandsNode* commands) : identifier(identifier), start(start), end(end), commands(commands) {}
+    ForToNode(IdentifierNode* identifier, ValueNode* start, ValueNode* end, CommandsNode* commands) : identifier(identifier), start(start), end(end), commands(commands) {
+        CommandNode* increase_pid = new AssignNode(identifier, new ExpressionNode(new ValueNode(identifier), new ValueNode("1"), "ADD"));
+        commands->add_child(increase_pid);
+        condition = new ConditionNode(new ValueNode(identifier), end, "LE");
+    }
 
     ~ForToNode() {
         delete start;
@@ -373,21 +352,19 @@ public:
         delete commands;
     }
 
-    void print() override {
-        cout << "FOR " << identifier << " FROM ";
-        start->print();
-        cout << " TO ";
-        end->print();
-        cout << " DO " << endl;
-        commands->print();
-        cout << "ENDFOR" << endl;
-    }
-
     void translate() override {
-        add_to_tac("forto: ");
-        start->translate();
-        end->translate();
+        add_to_tac("ASSIGN " + identifier->get_name() + " " + start->get_name());
+        add_to_tac2("ASSIGN", identifier->get_name(), start->get_name());
+        add_to_tac(increase_label_counter() + ":");
+        add_to_tac2("LABEL", get_label(1));
+        condition->translate();
+        add_to_tac("IF " + condition->temp->get_name() + "=0 GOTO " + increase_label_counter());
+        add_to_tac2("IF", condition->temp->get_name(), get_label(1));
         commands->translate();
+        add_to_tac("GOTO " + get_label(2));
+        add_to_tac2("GOTO", get_label(2));
+        add_to_tac(get_label(1) + ":");
+        add_to_tac2("LABEL", get_label(1));
     }
 };
 
@@ -397,8 +374,13 @@ public:
     ValueNode* start;
     ValueNode* end;
     CommandsNode* commands;
+    ConditionNode* condition;
 
-    ForDownToNode(IdentifierNode* identifier, ValueNode* start, ValueNode* end, CommandsNode* commands) : identifier(identifier), start(start), end(end), commands(commands) {}
+    ForDownToNode(IdentifierNode* identifier, ValueNode* start, ValueNode* end, CommandsNode* commands) : identifier(identifier), start(start), end(end), commands(commands) {
+        CommandNode* decrease_pid = new AssignNode(identifier, new ExpressionNode(new ValueNode(identifier), new ValueNode("1"), "SUB"));
+        commands->add_child(decrease_pid);
+        condition = new ConditionNode(new ValueNode(identifier), end, "GE");
+    }
 
     ~ForDownToNode() {
         delete start;
@@ -406,21 +388,19 @@ public:
         delete commands;
     }
 
-    void print() override {
-        cout << "FOR " << identifier << " FROM ";
-        start->print();
-        cout << " DOWNTO ";
-        end->print();
-        cout << " DO " << endl;
-        commands->print();
-        cout << "ENDFOR" << endl;
-    }
-
     void translate() override {
-        add_to_tac("fordownto: ");
-        start->translate();
-        end->translate();
+        add_to_tac("ASSIGN " + identifier->get_name() + " " + start->get_name());
+        add_to_tac2("ASSIGN", identifier->get_name(), start->get_name());
+        add_to_tac(increase_label_counter() + ":");
+        add_to_tac2("LABEL", get_label(1));
+        condition->translate();
+        add_to_tac("IF " + condition->temp->get_name() + "=0 GOTO " + increase_label_counter());
+        add_to_tac2("IF", condition->temp->get_name(), get_label(1));
         commands->translate();
+        add_to_tac("GOTO " + get_label(2));
+        add_to_tac2("GOTO", get_label(2));
+        add_to_tac(get_label(1) + ":"); 
+        add_to_tac2("LABEL", get_label(1));
     }
 };
 
@@ -430,14 +410,9 @@ public:
 
     ReadNode(IdentifierNode* identifier) : identifier(identifier) {}
 
-    void print() override {
-        cout << "READ ";
-        identifier->print();
-        cout << endl;
-    }
-
     void translate() override {
-        add_to_tac("read: " + identifier->get_name());
+        add_to_tac("READ " + identifier->get_name());
+        add_to_tac2("READ", identifier->get_name());
     }
 };
 
@@ -451,14 +426,9 @@ public:
         delete value;
     }
 
-    void print() override {
-        cout << "WRITE ";
-        value->print();
-        cout << endl;
-    }
-
     void translate() override {
-        add_to_tac("write: " + value->get_name());
+        add_to_tac("WRITE " + value->get_name());
+        add_to_tac2("WRITE", value->get_name());
     }
 };
 
@@ -472,16 +442,7 @@ public:
         delete commands;
     }
 
-    void print() override {
-        cout << "PROGRAM IS" << endl;
-        cout << "BEGIN" << endl;
-        commands->print();
-        cout << "END" << endl;
-    }
-
     void translate() override {
-        add_to_tac("main");
-        commands->translate();
     }
 };
 
@@ -497,18 +458,12 @@ public:
         delete commands;
     }
 
-    void print() override {
-        cout << "PROGRAM IS" << endl;
-        declarations->print();
-        cout << "BEGIN" << endl;
-        commands->print();
-        cout << "END" << endl;
-    }
-
     void translate() override {
-        tac.push_back("main with dec");
         declarations->translate();
-        commands->translate();
+        for(CommandNode* command : commands->commands) {
+            command->translate();
+        }
+
     }
 };
 

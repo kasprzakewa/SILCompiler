@@ -1,6 +1,5 @@
 %{
     #include "parser.hpp"
-    #include "symbol_table.hpp"
     #include <iostream>
     #include <cstdlib>
     using namespace std;
