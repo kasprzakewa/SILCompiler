@@ -82,7 +82,7 @@ commands:    commands command {
 
 command:     identifier ASSIGN expression ';' {
                   if (!$3->is_initialized().first) {
-                     yyerror(("Variable " + $3->is_initialized().second + " not initialized").c_str());
+                     yyerror(("Variable " + $3->is_initialized().second + " not initialized").c_str()); //dopracowac zwracanie nazwy expression
                   }
                   initialize_node($1);
                   $$ = new AssignNode($1, $3);
@@ -230,12 +230,7 @@ identifier:  PID {
 
 int main() {
    yyparse();
-   cout << "TAC1:" << endl;
    print_tac();
-   
-   cout << endl;
-   cout << "TAC2:" << endl;
-   print_tac2();
    return 0;
 }
 

@@ -1,8 +1,7 @@
 #include "ast_nodes.hpp"
 
 vector<IdentifierNode*> nodes;
-vector<string> tac;
-vector<TAC> tac2;
+vector<TAC> tac;
 int temp_counter = 0;
 int label_counter = 0;
 
@@ -41,22 +40,12 @@ void print_nodes() {
     }
 }
 
-void add_to_tac(string line) {
-    tac.push_back(line);
+void add_to_tac(string op, string result, string arg1, string arg2) {
+    tac.emplace_back(op, result, arg1, arg2);
 }
 
 void print_tac() {
-    for (string line : tac) {
-        cout << line << endl;
-    }
-}
-
-void add_to_tac2(string op, string result, string arg1, string arg2) {
-    tac2.emplace_back(op, result, arg1, arg2);
-}
-
-void print_tac2() {
-    for (TAC line : tac2) {
+    for (TAC line : tac) {
         cout << line.op << " " << line.result << " " << line.arg1 << " " << line.arg2 << endl;
     }
 }

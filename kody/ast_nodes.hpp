@@ -18,12 +18,9 @@ struct TAC {
         : op(op), result(result), arg1(arg1), arg2(arg2) {}
 };
 
-extern vector<string> tac;
-extern vector<TAC> tac2;
-void add_to_tac(string line);
-void add_to_tac2(string op, string result = "", string arg1 = "", string arg2 = "");
+extern vector<TAC> tac;
+void add_to_tac(string op, string result = "", string arg1 = "", string arg2 = "");
 void print_tac();
-void print_tac2();
 
 extern int temp_counter;
 string increase_temp_counter();
@@ -129,8 +126,7 @@ public:
 
     void translate() override {
         if (!(right == nullptr && left != nullptr)) {
-            add_to_tac(op + " " + temp->get_name() + " " + left->get_name() + " " + right->get_name());
-            add_to_tac2(op, temp->get_name(), left->get_name(), right->get_name());
+            add_to_tac(op, temp->get_name(), left->get_name(), right->get_name());
         }
     }
 };
@@ -152,8 +148,7 @@ public:
     }
 
     void translate() override {
-        add_to_tac(op + " " + temp->get_name() + " " + left->get_name() + " " + right->get_name());
-        add_to_tac2(op, temp->get_name(), left->get_name(), right->get_name());
+        add_to_tac(op, temp->get_name(), left->get_name(), right->get_name());
     }
 };
 
@@ -173,8 +168,7 @@ public:
 
     void translate() override {
         for (IdentifierNode* identifier : identifiers) {
-            add_to_tac("DECLARE " + identifier->get_name());
-            add_to_tac2("DECLARE", identifier->get_name());
+            add_to_tac("DECLARE", identifier->get_name());
         }
     }
 };
@@ -220,11 +214,9 @@ public:
     void translate() override {
         if (expression->temp != nullptr) {
             expression->translate();
-            add_to_tac("ASSIGN " + identifier->get_name() + " " + expression->temp->get_name());
-            add_to_tac2("ASSIGN", identifier->get_name(), expression->temp->get_name());
+            add_to_tac("ASSIGN", identifier->get_name(), expression->temp->get_name());
         } else {
-            add_to_tac("ASSIGN " + identifier->get_name() + " " + expression->get_name());
-            add_to_tac2("ASSIGN", identifier->get_name(), expression->get_name());
+            add_to_tac("ASSIGN", identifier->get_name(), expression->get_name());
         } 
     }
 };
@@ -233,8 +225,11 @@ class IfNode : public CommandNode {
 public:
     ConditionNode* condition;
     CommandsNode* commands;
+    string label;
 
-    IfNode(ConditionNode* condition, CommandsNode* commands) : condition(condition), commands(commands) {}
+    IfNode(ConditionNode* condition, CommandsNode* commands) : condition(condition), commands(commands) {
+        label = increase_label_counter();
+    }
 
     ~IfNode() {
         delete condition;
@@ -243,11 +238,9 @@ public:
 
     void translate() override {
         condition->translate();
-        add_to_tac("IF " + condition->temp->get_name() + "=0 GOTO " + increase_label_counter());
-        add_to_tac2("IF", condition->temp->get_name(), get_label(1));
+        add_to_tac("IF", condition->temp->get_name(), label);
         commands->translate();
-        add_to_tac(get_label(1) + ":");
-        add_to_tac2("LABEL", get_label(1));
+        add_to_tac("LABEL", label);
     }
 };
 
@@ -256,8 +249,13 @@ public:
     ConditionNode* condition;
     CommandsNode* if_commands;
     CommandsNode* else_commands;
+    string label1;
+    string label2;
 
-    IfElseNode(ConditionNode* condition, CommandsNode* if_commands, CommandsNode* else_commands) : condition(condition), if_commands(if_commands), else_commands(else_commands) {}
+    IfElseNode(ConditionNode* condition, CommandsNode* if_commands, CommandsNode* else_commands) : condition(condition), if_commands(if_commands), else_commands(else_commands) {
+        label1 = increase_label_counter();
+        label2 = increase_label_counter();
+    }
 
     ~IfElseNode() {
         delete condition;
@@ -267,16 +265,12 @@ public:
 
     void translate() override {
         condition->translate();
-        add_to_tac("IF " + condition->temp->get_name() + "=0 GOTO " + increase_label_counter());
-        add_to_tac2("IF", condition->temp->get_name(), get_label(1));
+        add_to_tac("IF", condition->temp->get_name(), label1);
         if_commands->translate();
-        add_to_tac("GOTO " + increase_label_counter());
-        add_to_tac2("GOTO", get_label(1));
-        add_to_tac(get_label(2) + ":");
-        add_to_tac2("LABEL", get_label(2));
+        add_to_tac("GOTO", label2);
+        add_to_tac("LABEL", label1);
         else_commands->translate();
-        add_to_tac(get_label(1) + ":");
-        add_to_tac2("LABEL", get_label(1));
+        add_to_tac("LABEL", label2);
     }
 };
 
@@ -284,8 +278,13 @@ class WhileNode : public CommandNode {
 public:
     ConditionNode* condition;
     CommandsNode* commands;
+    string label1;
+    string label2;
 
-    WhileNode(ConditionNode* condition, CommandsNode* commands) : condition(condition), commands(commands) {}
+    WhileNode(ConditionNode* condition, CommandsNode* commands) : condition(condition), commands(commands) {
+        label1 = increase_label_counter();
+        label2 = increase_label_counter();
+    }
 
     ~WhileNode() {
         delete condition;
@@ -293,16 +292,12 @@ public:
     }
 
     void translate() override {
-        add_to_tac(increase_label_counter() + ":");
-        add_to_tac2("LABEL", get_label(1));
+        add_to_tac("LABEL", label1);
         condition->translate();
-        add_to_tac("IF " + condition->temp->get_name() + "=0 GOTO " + increase_label_counter());
-        add_to_tac2("IF", condition->temp->get_name(), get_label(1));
+        add_to_tac("IF", condition->temp->get_name(), label2);
         commands->translate();
-        add_to_tac("GOTO " + get_label(2));
-        add_to_tac2("GOTO", get_label(2));
-        add_to_tac(get_label(1) + ":");
-        add_to_tac2("LABEL", get_label(1));
+        add_to_tac("GOTO", label1);
+        add_to_tac("LABEL", label2);
     }
 };
 
@@ -310,8 +305,13 @@ class RepeatUntilNode : public CommandNode {
 public:
     CommandsNode* commands;
     ConditionNode* condition;
+    string label1;
+    string label2;
 
-    RepeatUntilNode(CommandsNode* commands, ConditionNode* condition) : commands(commands), condition(condition) {}
+    RepeatUntilNode(CommandsNode* commands, ConditionNode* condition) : commands(commands), condition(condition) {
+        label1 = increase_label_counter();
+        label2 = increase_label_counter();
+    }
 
     ~RepeatUntilNode() {
         delete commands;
@@ -319,16 +319,12 @@ public:
     }
 
     void translate() override {
-        add_to_tac(increase_label_counter() + ":");
-        add_to_tac2("LABEL", get_label(1));
+        add_to_tac("LABEL", label1);
         commands->translate();
         condition->translate();
-        add_to_tac("IF " + condition->temp->get_name() + "=0 GOTO " + increase_label_counter());
-        add_to_tac2("IF", condition->temp->get_name(), get_label(1));
-        add_to_tac("GOTO " + get_label(2));
-        add_to_tac2("GOTO", get_label(2));
-        add_to_tac(get_label(1) + ":");
-        add_to_tac2("LABEL", get_label(1));
+        add_to_tac("IF", condition->temp->get_name(), label2);
+        add_to_tac("GOTO", label1);
+        add_to_tac("LABEL", label2);
     }
 };
 
@@ -339,11 +335,15 @@ public:
     ValueNode* end;
     CommandsNode* commands;
     ConditionNode* condition;
+    string label1;
+    string label2;
 
     ForToNode(IdentifierNode* identifier, ValueNode* start, ValueNode* end, CommandsNode* commands) : identifier(identifier), start(start), end(end), commands(commands) {
         CommandNode* increase_pid = new AssignNode(identifier, new ExpressionNode(new ValueNode(identifier), new ValueNode("1"), "ADD"));
         commands->add_child(increase_pid);
         condition = new ConditionNode(new ValueNode(identifier), end, "LE");
+        label1 = increase_label_counter();
+        label2 = increase_label_counter();
     }
 
     ~ForToNode() {
@@ -353,18 +353,13 @@ public:
     }
 
     void translate() override {
-        add_to_tac("ASSIGN " + identifier->get_name() + " " + start->get_name());
-        add_to_tac2("ASSIGN", identifier->get_name(), start->get_name());
-        add_to_tac(increase_label_counter() + ":");
-        add_to_tac2("LABEL", get_label(1));
+        add_to_tac("ASSIGN", identifier->get_name(), start->get_name());
+        add_to_tac("LABEL", label1);
         condition->translate();
-        add_to_tac("IF " + condition->temp->get_name() + "=0 GOTO " + increase_label_counter());
-        add_to_tac2("IF", condition->temp->get_name(), get_label(1));
+        add_to_tac("IF", condition->temp->get_name(), label2);
         commands->translate();
-        add_to_tac("GOTO " + get_label(2));
-        add_to_tac2("GOTO", get_label(2));
-        add_to_tac(get_label(1) + ":");
-        add_to_tac2("LABEL", get_label(1));
+        add_to_tac("GOTO", label1);
+        add_to_tac("LABEL", label2);
     }
 };
 
@@ -375,11 +370,15 @@ public:
     ValueNode* end;
     CommandsNode* commands;
     ConditionNode* condition;
+    string label1;
+    string label2;
 
     ForDownToNode(IdentifierNode* identifier, ValueNode* start, ValueNode* end, CommandsNode* commands) : identifier(identifier), start(start), end(end), commands(commands) {
         CommandNode* decrease_pid = new AssignNode(identifier, new ExpressionNode(new ValueNode(identifier), new ValueNode("1"), "SUB"));
         commands->add_child(decrease_pid);
         condition = new ConditionNode(new ValueNode(identifier), end, "GE");
+        label1 = increase_label_counter();
+        label2 = increase_label_counter();
     }
 
     ~ForDownToNode() {
@@ -389,18 +388,13 @@ public:
     }
 
     void translate() override {
-        add_to_tac("ASSIGN " + identifier->get_name() + " " + start->get_name());
-        add_to_tac2("ASSIGN", identifier->get_name(), start->get_name());
-        add_to_tac(increase_label_counter() + ":");
-        add_to_tac2("LABEL", get_label(1));
+        add_to_tac("ASSIGN", identifier->get_name(), start->get_name());
+        add_to_tac("LABEL", label1);
         condition->translate();
-        add_to_tac("IF " + condition->temp->get_name() + "=0 GOTO " + increase_label_counter());
-        add_to_tac2("IF", condition->temp->get_name(), get_label(1));
+        add_to_tac("IF", condition->temp->get_name(), label2);
         commands->translate();
-        add_to_tac("GOTO " + get_label(2));
-        add_to_tac2("GOTO", get_label(2));
-        add_to_tac(get_label(1) + ":"); 
-        add_to_tac2("LABEL", get_label(1));
+        add_to_tac("GOTO", label1);
+        add_to_tac("LABEL", label2);
     }
 };
 
@@ -411,8 +405,7 @@ public:
     ReadNode(IdentifierNode* identifier) : identifier(identifier) {}
 
     void translate() override {
-        add_to_tac("READ " + identifier->get_name());
-        add_to_tac2("READ", identifier->get_name());
+        add_to_tac("READ", identifier->get_name());
     }
 };
 
@@ -427,8 +420,7 @@ public:
     }
 
     void translate() override {
-        add_to_tac("WRITE " + value->get_name());
-        add_to_tac2("WRITE", value->get_name());
+        add_to_tac("WRITE", value->get_name());
     }
 };
 
