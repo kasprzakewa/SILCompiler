@@ -12,8 +12,10 @@
 %%
 "#".*       ;
 [ \t\n]+    ;
-[0-9]+      {   
-                yylval.ival = std::atoi(yytext); return NUM; 
+[0-9]+      {  
+                yylval.ival = std::atoll(yytext);
+                return NUM; 
+
             }
 [_a-z]+     {
                 yylval.sval = new std::string(yytext);
@@ -28,15 +30,15 @@
 "]"         {return ']';}
 ":"         {return ':';}
 ","         {return ',';}
-"+"         {return '+';}
-"-"         {return '-';}   
-"*"         {return '*';}
-"/"         {return '/';}
-"%"         {return '%';}
-"="         {return '=';}
+"+"         {return ADD;}
+"-"         {return SUB;}   
+"*"         {return MUL;}
+"/"         {return DIV;}
+"%"         {return MOD;}
+"="         {return EQ;}
 "!="        {return NEQ;}
-">"         {return '>';}
-"<"         {return '<';}
+">"         {return GT;}
+"<"         {return LT;}
 ">="        {return GE;}
 "<="       {return LE;}
 "PROCEDURE" {return PROCEDURE;}

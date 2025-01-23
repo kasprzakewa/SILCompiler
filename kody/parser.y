@@ -18,7 +18,7 @@
 }
 
 %union {
-   int ival;
+   long long ival;
    string *sval;
    MainNode* main;
    CommandsNode* commands;
@@ -32,16 +32,21 @@
 %type <commands> commands
 %type <command> command expression
 %type <condition> condition
-%type <value> value identifier 
+%type <value> value identifier number
 %token <ival> NUM
 %token <sval> PID
 
-%token ASSIGN NEQ GE LE
+%token ASSIGN ADD SUB MUL DIV MOD EQ NEQ GT LT GE LE
 %token PROCEDURE IS BEG END PROGRAM IF THEN ELSE ENDIF WHILE ENDWHILE REPEAT UNTIL FOR FROM TO DO ENDFOR DOWNTO READ WRITE T
+%left ADD SUB
+%left MUL DIV MOD
+%left EQ NEQ GT LT GE LE
+%right UMINUS
 
 %%
 
 program_all:  procedures main {
+                  $2->analyze();
                   $2->translate();
                }
 
@@ -75,6 +80,9 @@ commands:    commands command {
              ;
 
 command:     identifier ASSIGN expression ';' {
+                  if (dynamic_cast<ArrayElem*>($1) != nullptr) {
+                     cout << "ARRAY ELEMENT at 1" << endl;
+                  }
                   $1->initialize();
                   $$ = $3;
                   $$->set_x($1);
@@ -93,13 +101,41 @@ command:     identifier ASSIGN expression ';' {
                }
              | FOR PID FROM value TO value DO commands ENDFOR {
                   ValueNode* one = find_node("1");
+
+                  if (one == nullptr) {
+                     one = new ValueNode("1", false, 0, true);
+                     add_to_memory(one);
+                  }
+
                   ValueNode* i = find_node(*$2);
+                  
+
+                  if (i == nullptr) {
+                     i = new ValueNode(*$2, false, 0, true);
+                     add_to_memory(i);
+                     cout << "I: " << i->name << " added to memeory" << endl;
+                  }
+                  
                   $$ = new ForNode(i, $4, $6, one, $8, "JPOS"); 
                }
              | FOR PID FROM value DOWNTO value DO commands ENDFOR {
                   ValueNode* one = find_node("1");
+
+                  if (one == nullptr) {
+                     one = new ValueNode("1", false, 0, true);
+                     add_to_memory(one);
+                  }
+
                   ValueNode* i = find_node(*$2);
+
+                  if (i == nullptr) {
+                     i = new ValueNode(*$2, false, 0, true);
+                     add_to_memory(i);
+                     cout << "I: " << i->name << " added to memeory" << endl;
+                  }
+
                   $$ = new ForNode(i, $4, $6, one, $8, "JNEG");
+                  
                }
              | proc_call ';' { 
                   $$ = nullptr; 
@@ -109,6 +145,9 @@ command:     identifier ASSIGN expression ';' {
                   $$ = new IONode("GET", $2);
                }
              | WRITE value ';' { 
+                  if (dynamic_cast<ArrayElem*>($2) != nullptr) {
+                     cout << "ARRAY ELEMENT at write" << endl;
+                  }
                   $$ = new IONode("PUT", $2);
                }
              ;
@@ -124,13 +163,41 @@ proc_call:   PID '(' args ')' {
             ;
 
 declarations:declarations ',' PID {
-                  ValueNode* val = new ValueNode(*$3, false, 0);
-                  add_to_memory(val);
+                  ValueNode* val = find_node(*$3);
+
+                  if (val == nullptr) {
+                     val = new ValueNode(*$3, false, 0, true);
+                     add_to_memory(val);
+                  } else {
+                     std::string error_msg = "Variable " + val->name + " already declared";
+                     yyerror(error_msg.c_str());
+                  }
                }
              | PID {
-                  ValueNode* val = new ValueNode(*$1, false, 0);
-                  add_to_memory(val);
+                  ValueNode* val = find_node(*$1);
+
+                  if (val == nullptr) {
+                     val = new ValueNode(*$1, false, 0, true);
+                     add_to_memory(val);
+                  } else {
+                     std::string error_msg = "Variable " + val->name + " already declared";
+                     yyerror(error_msg.c_str());
+                  }
                }
+            | declarations ',' PID'['number':'number']' {
+               ArrayNode* arr = new ArrayNode(*$3, stoll($5->name), stoll($7->name));
+               add_to_memory(arr);
+
+               ArrayNode* arr2 = find_array(*$3);
+               cout << "ARRAY: " << arr2->name << " SIZE: " << arr2->size << " register num,: " << arr2->register_number <<  endl;
+            }
+            | PID'['number':'number']' {
+               ArrayNode* arr = new ArrayNode(*$1, stoll($3->name), stoll($5->name));
+               add_to_memory(arr);
+
+               ArrayNode* arr2 = find_array(*$1);
+               cout << "ARRAY: " << arr2->name << " SIZE: " << arr2->size << " register num,: " << arr2->register_number << endl;
+            }
              ;
 
 args_decl:   args_decl ',' PID { 
@@ -152,33 +219,45 @@ args:        args ',' PID {
 expression:  value {
                   $$ = new AssignNode("ASSIGN", nullptr, $1, nullptr);
                }
-             | value '+' value {
+             | value ADD value {
                   $$ = new AssignNode("ADD", nullptr, $1, $3);
                }
-             | value '-' value {
+             | value SUB value {
                   $$ = new AssignNode("SUB", nullptr, $1, $3);
                }
-             | value '*' value {
+             | value MUL value {
                   $$ = new AssignNode("MUL", nullptr, $1, $3);
+
+                  ValueNode* zero = find_node("0");
+                  if (zero == nullptr) {
+                        zero = new ValueNode("0", false, 2, true);
+                        add_to_memory(zero);
+                  }
+
+                  ValueNode* one = find_node("1");
+                  if (one == nullptr) {
+                        one = new ValueNode("1", false, 2, true);
+                        add_to_memory(one);
+                  }
                }
-             | value '/' value {
+             | value DIV value {
                   $$ = new AssignNode("DIV", nullptr, $1, $3);
                }
-             | value '%' value {
+             | value MOD value {
                   $$ = new AssignNode("MOD", nullptr, $1, $3);
                }
                ;
 
-condition:   value '=' value { 
+condition:   value EQ value { 
                   $$ = new ConditionNode("JZERO", $1, $3, false);
                }
              | value NEQ value { 
                   $$ = new ConditionNode("JZERO", $1, $3, true); 
                }
-             | value '>' value { 
+             | value GT value { 
                   $$ = new ConditionNode("JPOS", $1, $3, false);
                }
-             | value '<' value {
+             | value LT value {
                   $$ = new ConditionNode("JNEG", $1, $3, false);
                }
              | value GE value { 
@@ -189,21 +268,66 @@ condition:   value '=' value {
                }
                ;
 
-value:       NUM { 
-                  $$ = find_node(to_string($1));
-
-                  if ($$ == nullptr) {
-                     $$ = new ValueNode(to_string($1), true, 2);
-                     add_to_memory($$);
-                  }
+value:       number {
+                  $$ = $1;
                }
              | identifier {
                   $$ = $1;
                }
                ;
 
+number:      NUM {
+                  $$ = find_node(to_string($1));
+
+                  if ($$ == nullptr) {
+                     $$ = new ValueNode(to_string($1), true, 2, true);
+                     $$->initialize();
+                     add_to_memory($$);
+                     $$->set_value($1);
+                  }
+               }
+            | SUB NUM %prec UMINUS {
+                  $$ = find_node(to_string(-$2));
+
+                  if ($$ == nullptr) {
+                     $$ = new ValueNode(to_string(-$2), true, 2, true);
+                     $$->initialize();
+                     add_to_memory($$);
+                     $$->set_value(-$2);
+                  }
+               }
+
 identifier:  PID {
                   $$ = find_node(*$1);
+
+                  if ($$ == nullptr) {
+                     $$ = new ValueNode(*$1, true, 0, true);
+                     add_to_memory($$);
+                  }
+               }
+               | PID'['PID']' {
+
+                  ArrayNode* arr = find_array(*$1);
+                  ValueNode* index = find_node(*$3);
+
+                  cout << "ARRAY: " << arr->name << " INDEX: " << index->name << endl;
+
+                  string arr_name = arr->name + "[" + index->name + "]";
+
+                  $$ = new ArrayElem(arr_name, arr, index);
+                  
+               }
+               | PID'['number']' {
+                  ArrayNode* arr = find_array(*$1);
+
+                  long long reg = stoll($3->name) - arr->start + arr->register_number;
+
+                  cout << "arr start " << arr->start << " reg num " << arr->register_number << endl;
+                  cout << "ARRAY: " << arr->name << " REG: " << reg << endl;
+
+                  string arr_name = arr->name + "[" + $3->name + "]";
+
+                  $$ = $3;
                }
              ;
 %%
@@ -213,6 +337,7 @@ int main() {
    print_memory();
    cout << endl;
    print_assembly();
+   save_assembly_to_file("output.txt");
    return 0;
 }
 
