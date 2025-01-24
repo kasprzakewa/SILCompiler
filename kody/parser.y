@@ -25,14 +25,18 @@
    CommandNode* command;
    ConditionNode* condition;
    ValueNode* value;
+   ProceduresNode* procedures;
+   ProgramNode* program;
 }
 
-%type <sval> args_decl args proc_head proc_call procedures program_all declarations
+%type <sval> args_decl args proc_head proc_call declarations
 %type <main> main
 %type <commands> commands
 %type <command> command expression
 %type <condition> condition
 %type <value> value identifier number
+%type <procedures> procedures
+%type <program> program_all
 %token <ival> NUM
 %token <sval> PID
 
@@ -46,18 +50,20 @@
 %%
 
 program_all:  procedures main {
-                  $2->analyze();
-                  $2->translate();
+                  $$ = new ProgramNode($1, $2);
+                  $$->analyze(); 
+                  $$->translate();
                }
 
 procedures:  procedures PROCEDURE proc_head IS declarations BEG commands END { 
                   $$ = nullptr; 
                }
              | procedures PROCEDURE proc_head IS BEG commands END { 
-                  $$ = nullptr; 
+                  $$ = $1;
+                  $$->add_procedure(new ProcedureNode(*$3, $6));
                }
              | { 
-                  $$ = nullptr; 
+                  $$ = new ProceduresNode(); 
                }
              ;
 
@@ -97,9 +103,12 @@ command:     identifier ASSIGN expression ';' {
                   $$ = new WhileNode($2, $4);
                }
              | REPEAT commands UNTIL condition ';' { 
-                  $$ = new RepeatNode($4, $2); 
+                  $$ = new RepeatNode($4, $2);
                }
              | FOR PID FROM value TO value DO commands ENDFOR {
+                  // cout << $<value>4->name << endl;
+                  // $<commands>8->translate();
+
                   ValueNode* one = find_node("1");
 
                   if (one == nullptr) {
@@ -127,6 +136,7 @@ command:     identifier ASSIGN expression ';' {
                   }
 
                   ValueNode* i = find_node(*$2);
+                  
 
                   if (i == nullptr) {
                      i = new ValueNode(*$2, false, 0, true);
@@ -134,11 +144,15 @@ command:     identifier ASSIGN expression ';' {
                      cout << "I: " << i->name << " added to memeory" << endl;
                   }
 
+                  
+
                   $$ = new ForNode(i, $4, $6, one, $8, "JNEG");
                   
                }
              | proc_call ';' { 
-                  $$ = nullptr; 
+                  cout << "PROCEDURE CALL  " << *$1 << endl;
+                  ProcedureNode* proc = find_procedure(*$1);
+                  $$ = new ProcedureCallNode(proc); 
                }
              | READ identifier ';' { 
                   $2->initialize();
@@ -153,12 +167,12 @@ command:     identifier ASSIGN expression ';' {
              ;
 
 proc_head:   PID '(' args_decl ')' { 
-                  $$ = nullptr; 
+                  $$ = $1; 
                }
             ;
 
 proc_call:   PID '(' args ')' { 
-                  $$ = nullptr; 
+                  $$ = $1; 
                }
             ;
 

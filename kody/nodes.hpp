@@ -75,6 +75,7 @@ public:
     virtual ~CommandNode() {}
     virtual void set_x(ValueNode* x) {};
     virtual void translate() override {}
+    virtual void print() {}
     virtual void analyze() override {}
 };
 
@@ -88,6 +89,7 @@ public:
     void add_child(CommandNode* command);
     void translate() override;
     void analyze() override;
+    void print();
 };
 
 class AssignNode : public CommandNode {
@@ -159,7 +161,12 @@ public:
     string op; //jpos for increasing, jneg for decreasing
 
     ForNode(ValueNode* i, ValueNode* start, ValueNode* end, ValueNode* one, CommandsNode* commands, const string &op);
+    ForNode(ValueNode* i);
     ~ForNode() override;
+    void set_start(ValueNode* start);
+    void set_end(ValueNode* end);
+    void set_commands(CommandsNode* commands);
+    void set_op(const string& op);
     void translate() override;
     void analyze() override;
 };
@@ -173,6 +180,7 @@ public:
     ~IONode() override;
     void translate() override;
     void analyze() override;
+    void print() override;
 };
 
 class MainNode : public Node {
@@ -187,14 +195,63 @@ public:
     void analyze() override;
 };
 
+class ProcedureNode : public Node {
+public:
+    string name;
+    CommandsNode* commands;
+    int len;
+    long long start_line;
+
+    ProcedureNode(const string &name, CommandsNode* commands);
+    ~ProcedureNode() override;
+    void add_procedure(MainNode* procedure);
+    void translate() override;
+    void analyze() override;
+};
+
+class ProcedureCallNode : public CommandNode {
+public:
+    ProcedureNode* procedure;
+
+    ProcedureCallNode(ProcedureNode* procedure);
+    ~ProcedureCallNode() override;
+    void translate() override;
+    void analyze() override;
+};
+
+class ProceduresNode : public Node {
+public:
+    int len;
+
+    ProceduresNode();
+    ~ProceduresNode() override;
+    void add_procedure(ProcedureNode* procedure);
+    void translate() override;
+    void analyze() override;
+};
+
+class ProgramNode : public Node {
+public:
+    MainNode* main;
+    ProceduresNode* procedures;
+    int len;
+
+    ProgramNode(ProceduresNode* procedures, MainNode* main);
+    ~ProgramNode() override;
+    void translate() override;
+    void analyze() override;
+};
+
 extern int first_free_register;
 extern int code_line;
 extern vector<ValueNode*> memory;
+extern vector<ProcedureNode*> procedures;
 extern vector<string> assembly;
 
 void add_to_memory(ValueNode* value);
 ValueNode* find_node(const string &name);
 ArrayNode* find_array(const string &name);
+ProcedureNode* find_procedure(const string &name);
 void find_index(ArrayElem* arrayElem, long long store_reg);
 void print_assembly();
 void print_memory();
