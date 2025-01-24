@@ -261,9 +261,8 @@ void AssignNode::analyze() {
     } else {
         len = 3;
     }
-
+  
     // cout << "Length of assign node with op " << op << " = " << len << endl;
-           
 }
 
 void AssignNode::translate() {
@@ -644,6 +643,7 @@ void CommandsNode::analyze() {
         command->analyze();
         len += command->len;
     }
+
     // cout << "Length of commands node = " << len << endl;
 }
 

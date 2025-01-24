@@ -50,6 +50,7 @@
 %%
 
 program_all:  procedures main {
+
                   $$ = new ProgramNode($1, $2);
                   $$->analyze(); 
                   $$->translate();
@@ -108,7 +109,7 @@ command:     identifier ASSIGN expression ';' {
              | FOR PID FROM value TO value DO commands ENDFOR {
                   // cout << $<value>4->name << endl;
                   // $<commands>8->translate();
-
+                  
                   ValueNode* one = find_node("1");
 
                   if (one == nullptr) {
@@ -136,15 +137,12 @@ command:     identifier ASSIGN expression ';' {
                   }
 
                   ValueNode* i = find_node(*$2);
-                  
 
                   if (i == nullptr) {
                      i = new ValueNode(*$2, false, 0, true);
                      add_to_memory(i);
                      cout << "I: " << i->name << " added to memeory" << endl;
                   }
-
-                  
 
                   $$ = new ForNode(i, $4, $6, one, $8, "JNEG");
                   
