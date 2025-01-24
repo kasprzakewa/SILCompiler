@@ -11,12 +11,14 @@ int array_register_x = 6;
 int array_register_y = 7;
 int array_register_z = 8;
 int code_line = 0;
+int procedure_line = 1;
+int mul_line = 0;
 
 bool is_mul = false;
 int procedures_length = 0;
 
 vector<ValueNode*> memory;
-vector<string> procedures;
+vector<ProcedureNode*> procedures;
 vector<string> assembly;
 
 void add_to_memory(ValueNode* value) {
@@ -41,6 +43,15 @@ ArrayNode* find_array(const string &name) {
     for (auto val : memory) {
         if (dynamic_cast<ArrayNode*>(val) && val->name == name) {
             return dynamic_cast<ArrayNode*>(val);
+        }
+    }
+    return nullptr;
+}
+
+ProcedureNode* find_procedure(const string &name) {
+    for (auto procedure : procedures) {
+        if (procedure->name == name) {
+            return procedure;
         }
     }
     return nullptr;
@@ -174,7 +185,7 @@ void ValueNode::initialize() {
 }
 
 void ValueNode::analyze() {
-    cout << "Length of node " << name << " = " << len << endl;
+    // cout << "Length of node " << name << " = " << len << endl;
 }
 
 void ValueNode::translate() {
@@ -195,7 +206,7 @@ ArrayNode::ArrayNode(const string &name, long long start, long long end) : Value
 }
 
 void ArrayNode::analyze() {
-    cout << "Length of array " << name << " = " << len << endl;
+    // cout << "Length of array " << name << " = " << len << endl;
 }
 
 void ArrayNode::translate() {
@@ -242,6 +253,7 @@ void AssignNode::analyze() {
     } else if (op == "MUL") {
         if (!is_mul) {
             is_mul = true;
+            mul_line = procedure_line;
             procedures_length += 46;
         }
         
@@ -249,9 +261,8 @@ void AssignNode::analyze() {
     } else {
         len = 3;
     }
-
-    cout << "Length of assign node with op " << op << " = " << len << endl;
-           
+  
+    // cout << "Length of assign node with op " << op << " = " << len << endl;
 }
 
 void AssignNode::translate() {
@@ -305,7 +316,7 @@ void AssignNode::translate() {
 
         add_to_assembly("SET " + to_string(code_line + 3));
         add_to_assembly("STORE " + to_string(return_register));
-        add_to_assembly("JUMP -" + to_string(code_line - 1));
+        add_to_assembly("JUMP -" + to_string(code_line - mul_line));
 
         if (ArrayElem* arrayElem = dynamic_cast<ArrayElem*>(x)) {
             find_index(arrayElem, array_register_x);
@@ -404,7 +415,7 @@ void IfNode::analyze() {
         len = 4 + commands->len;
     }
 
-    cout << "Length of if node = " << len << endl;
+    // cout << "Length of if node = " << len << endl;
 }
 
 void IfNode::translate() {
@@ -432,7 +443,7 @@ void IfElseNode::analyze() {
     else_commands->analyze();
     len = 4 + if_commands->len + else_commands->len;
 
-    cout << "Length of if else node = " << len << endl;
+    // cout << "Length of if else node = " << len << endl;
 }
 
 void IfElseNode::translate() {
@@ -466,7 +477,7 @@ void WhileNode::analyze() {
         len = commands->len + 5;
     }
 
-    cout << "Length of while node = " << len << endl;
+    // cout << "Length of while node = " << len << endl;
 }
 
 void WhileNode::translate() {
@@ -497,7 +508,7 @@ void RepeatNode::analyze() {
         len = commands->len + 3;
     }
 
-    cout << "Length of repeat node = " << len << endl;
+    // cout << "Length of repeat node = " << len << endl;
 }
 
 void RepeatNode::translate() {
@@ -514,6 +525,8 @@ void RepeatNode::translate() {
 // ForNode************************************************************************************************************
 ForNode::ForNode(ValueNode* i, ValueNode* start, ValueNode* end, ValueNode* one, CommandsNode* commands, const string &op) : i(i), start(start), end(end), one(one), commands(commands), op(op) {}
 
+ForNode::ForNode(ValueNode* i) : i(i) {}
+
 ForNode::~ForNode() {
     delete i;
     delete start;
@@ -521,11 +534,27 @@ ForNode::~ForNode() {
     delete commands;
 }
 
+void ForNode::set_start(ValueNode* start) {
+    this->start = start;
+}
+
+void ForNode::set_end(ValueNode* end) {
+    this->end = end;
+}
+
+void ForNode::set_commands(CommandsNode* commands) {
+    this->commands = commands;
+}
+
+void ForNode::set_op(const string& op) {
+    this->op = op;
+}
+
 void ForNode::analyze() {
     commands->analyze();
     len = commands->len + 8;
 
-    cout << "Length of for node = " << len << endl;
+    // cout << "Length of for node = " << len << endl;
 }
 
 void ForNode::translate() {
@@ -555,8 +584,12 @@ IONode::~IONode() {
 }
 
 void IONode::analyze() {
-    cout << "Length of io node = " << len << endl;
+    // cout << "Length of io node = " << len << endl;
 
+}
+
+void IONode::print() {
+    cout << "WRITE " << x->name << endl;
 }
 
 void IONode::translate() {
@@ -595,6 +628,12 @@ CommandsNode::~CommandsNode() {
     }
 }
 
+void CommandsNode::print() {
+    for (auto comm : commands) {
+        comm->print();
+    }
+}
+
 void CommandsNode::add_child(CommandNode* command) {
     commands.push_back(command);
 }
@@ -604,7 +643,8 @@ void CommandsNode::analyze() {
         command->analyze();
         len += command->len;
     }
-    cout << "Length of commands node = " << len << endl;
+
+    // cout << "Length of commands node = " << len << endl;
 }
 
 void CommandsNode::translate() {
@@ -625,7 +665,7 @@ void MainNode::analyze() {
 
 void MainNode::translate() {
     if(is_mul) {
-        add_to_assembly("JUMP " + to_string(procedures_length + 1));
+        cout << "Mul starts at line " << mul_line << endl;
         add_mul();
     }
     for (auto val : memory) {
@@ -633,4 +673,96 @@ void MainNode::translate() {
     }
     commands->translate();
     add_to_assembly("HALT");
+}
+
+// ProcedureNode*******************************************************************************************************
+ProcedureNode::ProcedureNode(const string& name, CommandsNode* commands) : name(name), commands(commands) {
+    len = 0;
+}
+
+ProcedureNode::~ProcedureNode() {
+    delete commands;
+}
+
+void ProcedureNode::translate() {
+    cout << "Procedure " << name << " starts at line " << start_line << endl;
+    commands->translate();
+    add_to_assembly("RTRN " + to_string(return_register));
+}
+
+void ProcedureNode::analyze() {
+    start_line = procedure_line;
+    commands->analyze();
+    len = commands->len + 1;
+    procedure_line += len;
+}
+
+// ProcedureCallNode***************************************************************************************************
+ProcedureCallNode::ProcedureCallNode(ProcedureNode* procedure) : procedure(procedure) {}
+
+ProcedureCallNode::~ProcedureCallNode() {
+    delete procedure;
+}
+
+void ProcedureCallNode::translate() {
+    add_to_assembly("SET " + to_string(code_line + 3));
+    add_to_assembly("STORE " + to_string(return_register));
+    add_to_assembly("JUMP -" + to_string(code_line - procedure->start_line));
+}
+
+void ProcedureCallNode::analyze() {
+    len = procedure->len;
+    cout << "Length of procedure call node = " << len << endl;
+}
+
+// ProceduresNode*******************************************************************************************************
+ProceduresNode::ProceduresNode() {
+    len = 0;
+}
+
+ProceduresNode::~ProceduresNode() {
+    for (auto procedure : procedures) {
+        delete procedure;
+    }
+}
+
+void ProceduresNode::add_procedure(ProcedureNode* procedure) {
+    procedures.push_back(procedure);
+}
+
+void ProceduresNode::translate() {
+    for (auto procedure : procedures) {
+        procedure->translate();
+    }
+}
+
+void ProceduresNode::analyze() {
+    for (auto procedure : procedures) {
+        procedure->analyze();
+        len += procedure->len;
+    }
+    procedures_length += len;
+    cout << "Length of procedures node = " << len << endl;
+}
+
+// ProgramNode********************************************************************************************************
+ProgramNode::ProgramNode(ProceduresNode* procedures, MainNode* main) : main(main), procedures(procedures) {}
+
+ProgramNode::~ProgramNode() {
+    delete main;
+    delete procedures;
+}
+
+void ProgramNode::translate() {
+    if (procedures_length > 0) {
+        add_to_assembly("JUMP " + to_string(procedures_length + 1));
+    }
+    procedures->translate();
+    main->translate();
+}
+
+void ProgramNode::analyze() {
+    procedures->analyze();
+    main->analyze();
+    cout << "Length of procedures = " << procedures_length << endl;
 }
