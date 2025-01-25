@@ -21,7 +21,6 @@
                 yylval.sval = new std::string(yytext);
                 return PID;
             }
-
 ":="        {return ASSIGN;}
 ";"         {return ';';}
 "("         {return '(';}

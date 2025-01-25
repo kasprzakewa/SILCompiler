@@ -11,11 +11,9 @@ using namespace std;
 class Node {
 public:
     virtual ~Node() {}
-    virtual void translate() {}
-    virtual void analyze() {}
+    virtual void translate(bool inside_procedure) {}
+    virtual void analyze(bool inside_procedure) {}
 };
-
-
 
 class ValueNode : public Node {
 public:
@@ -24,14 +22,15 @@ public:
     bool initialized;
     long long register_number;
     int len;
+    bool is_const;
 
-    ValueNode(const string &name, bool initialized, int len, bool increment_reg);
+    ValueNode(const string &name, bool initialized, int len, bool increment_reg, bool is_const);
     ValueNode(const string &name, bool initialized, long long register_number, int len);
     void set_value(long long value);
     void create_from_node(ValueNode* node);
     void initialize();
-    virtual void translate() override;
-    virtual void analyze() override;
+    virtual void translate(bool inside_procedure) override;
+    virtual void analyze(bool inside_procedure) override;
 };
 
 class ArrayNode : public ValueNode {
@@ -41,8 +40,9 @@ public:
     long long start;
 
     ArrayNode(const string &name, long long start, long long end);
-    void analyze() override;
-    void translate() override;
+    ArrayNode(const string& name);
+    void analyze(bool inside_procedure) override;
+    void translate(bool inside_procedure) override;
 };
 
 class ArrayElem : public ValueNode {
@@ -65,8 +65,8 @@ public:
 
     ConditionNode(const string &op, ValueNode* x, ValueNode* y, bool is_negated);
     ~ConditionNode() override;
-    void translate() override;
-    void analyze() override;
+    void translate(bool inside_procedure) override;
+    void analyze(bool inside_procedure) override;
 };
 
 class CommandNode : public Node {
@@ -74,9 +74,9 @@ public:
     int len;
     virtual ~CommandNode() {}
     virtual void set_x(ValueNode* x) {};
-    virtual void translate() override {}
+    virtual void translate(bool inside_procedure) override {}
     virtual void print() {}
-    virtual void analyze() override {}
+    virtual void analyze(bool inside_procedure) override {}
 };
 
 class CommandsNode : public Node {
@@ -87,8 +87,8 @@ public:
     CommandsNode();
     ~CommandsNode() override;
     void add_child(CommandNode* command);
-    void translate() override;
-    void analyze() override;
+    void translate(bool inside_procedure) override;
+    void analyze(bool inside_procedure) override;
     void print();
 };
 
@@ -102,8 +102,8 @@ public:
     AssignNode(const string &op, ValueNode* x, ValueNode* y, ValueNode* z);
     ~AssignNode() override;
     void set_x(ValueNode* x) override;
-    void translate() override;
-    void analyze() override;
+    void translate(bool inside_procedure) override;
+    void analyze(bool inside_procedure) override;
 };
 
 class IfNode : public CommandNode {
@@ -113,8 +113,8 @@ public:
 
     IfNode(ConditionNode* condition, CommandsNode* commands);
     ~IfNode() override;
-    void translate() override;
-    void analyze() override;
+    void translate(bool inside_procedure) override;
+    void analyze(bool inside_procedure) override;
 };
 
 class IfElseNode : public CommandNode {
@@ -125,8 +125,8 @@ public:
 
     IfElseNode(ConditionNode* condition, CommandsNode* if_commands, CommandsNode* else_commands);
     ~IfElseNode() override;
-    void translate() override;
-    void analyze() override;
+    void translate(bool inside_procedure) override;
+    void analyze(bool inside_procedure) override;
 };
 
 class WhileNode : public CommandNode {
@@ -136,8 +136,8 @@ public:
 
     WhileNode(ConditionNode* condition, CommandsNode* commands);
     ~WhileNode() override;
-    void translate() override;
-    void analyze() override;
+    void translate(bool inside_procedure) override;
+    void analyze(bool inside_procedure) override;
 };
 
 class RepeatNode : public CommandNode {
@@ -147,8 +147,8 @@ public:
 
     RepeatNode(ConditionNode* condition, CommandsNode* commands);
     ~RepeatNode() override;
-    void translate() override;
-    void analyze() override;
+    void translate(bool inside_procedure) override;
+    void analyze(bool inside_procedure) override;
 };
 
 class ForNode : public CommandNode {
@@ -159,6 +159,7 @@ public:
     ValueNode* one;
     CommandsNode* commands;
     string op; //jpos for increasing, jneg for decreasing
+    ValueNode* counter;
 
     ForNode(ValueNode* i, ValueNode* start, ValueNode* end, ValueNode* one, CommandsNode* commands, const string &op);
     ForNode(ValueNode* i);
@@ -167,8 +168,8 @@ public:
     void set_end(ValueNode* end);
     void set_commands(CommandsNode* commands);
     void set_op(const string& op);
-    void translate() override;
-    void analyze() override;
+    void translate(bool inside_procedure) override;
+    void analyze(bool inside_procedure) override;
 };
 
 class IONode : public CommandNode {
@@ -178,9 +179,8 @@ public:
 
     IONode(const string &op, ValueNode* x);
     ~IONode() override;
-    void translate() override;
-    void analyze() override;
-    void print() override;
+    void translate(bool inside_procedure) override;
+    void analyze(bool inside_procedure) override;
 };
 
 class MainNode : public Node {
@@ -191,32 +191,42 @@ public:
 
     MainNode(CommandsNode* commands, bool declarations);
     ~MainNode() override;
-    void translate() override;
-    void analyze() override;
+    void translate(bool inside_procedure) override;
+    void analyze(bool inside_procedure) override;
 };
+
+class ProcedureHeader : public Node {
+public:
+    string name;
+    vector<ValueNode*>* arguments;
+
+    ProcedureHeader(const string& name, vector<ValueNode*>* args);
+};
+
 
 class ProcedureNode : public Node {
 public:
-    string name;
+    ProcedureHeader* header;
     CommandsNode* commands;
     int len;
     long long start_line;
+    ValueNode* return_address;
 
-    ProcedureNode(const string &name, CommandsNode* commands);
+    ProcedureNode(ProcedureHeader* header, CommandsNode* commands);
     ~ProcedureNode() override;
-    void add_procedure(MainNode* procedure);
-    void translate() override;
-    void analyze() override;
+    void translate(bool inside_procedure) override;
+    void analyze(bool inside_procedure) override;
 };
 
 class ProcedureCallNode : public CommandNode {
 public:
     ProcedureNode* procedure;
+    vector<ValueNode*>* arguments;
 
-    ProcedureCallNode(ProcedureNode* procedure);
+    ProcedureCallNode(ProcedureNode* procedure, vector<ValueNode*>* arguments);
     ~ProcedureCallNode() override;
-    void translate() override;
-    void analyze() override;
+    void translate(bool inside_procedure) override;
+    void analyze(bool inside_procedure) override;
 };
 
 class ProceduresNode : public Node {
@@ -226,8 +236,8 @@ public:
     ProceduresNode();
     ~ProceduresNode() override;
     void add_procedure(ProcedureNode* procedure);
-    void translate() override;
-    void analyze() override;
+    void translate(bool inside_procedure) override;
+    void analyze(bool inside_procedure) override;
 };
 
 class ProgramNode : public Node {
@@ -238,8 +248,8 @@ public:
 
     ProgramNode(ProceduresNode* procedures, MainNode* main);
     ~ProgramNode() override;
-    void translate() override;
-    void analyze() override;
+    void translate(bool inside_procedure) override;
+    void analyze(bool inside_procedure) override;
 };
 
 extern int first_free_register;

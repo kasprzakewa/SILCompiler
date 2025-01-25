@@ -13,6 +13,7 @@ int array_register_z = 8;
 int code_line = 0;
 int procedure_line = 1;
 int mul_line = 0;
+long long counter_counter = 0;
 
 bool is_mul = false;
 int procedures_length = 0;
@@ -50,7 +51,7 @@ ArrayNode* find_array(const string &name) {
 
 ProcedureNode* find_procedure(const string &name) {
     for (auto procedure : procedures) {
-        if (procedure->name == name) {
+        if (procedure->header->name == name) {
             return procedure;
         }
     }
@@ -59,12 +60,6 @@ ProcedureNode* find_procedure(const string &name) {
 
 void find_index(ArrayElem* arrayElem, long long store_reg) {
         ValueNode* one = find_node("1");
-        if (one == nullptr) {
-            one = new ValueNode("1", false, 2, true);
-            add_to_memory(one);
-            add_to_assembly("SET 1");
-            add_to_assembly("STORE " + to_string(one->register_number));
-        }
         add_to_assembly("LOAD " + to_string(arrayElem->index->register_number));
         add_to_assembly("SUB " + to_string(arrayElem->array->start_register));
         add_to_assembly("ADD " + to_string(one->register_number));
@@ -114,7 +109,7 @@ void add_mul() {
 
     ValueNode* minus_one = find_node("-1");
     if (minus_one == nullptr) {
-        minus_one = new ValueNode("-1", false, 2, true);
+        minus_one = new ValueNode("-1", false, 2, true, true);
         add_to_memory(minus_one);
     }
 
@@ -159,14 +154,16 @@ void add_mul() {
 }
 
 // ValueNode**********************************************************************************************************
-ValueNode::ValueNode(const string &name, bool initialized, int len, bool increment_reg) : name(name), initialized(initialized), len(len) {
+ValueNode::ValueNode(const string &name, bool initialized, int len, bool increment_reg, bool is_const) : name(name), initialized(initialized), len(len), is_const(is_const) {
     
     if (increment_reg) {
         register_number = first_free_register++;
     }
 }
 
-ValueNode::ValueNode(const string &name, bool initialized, long long register_number, int len) : name(name), initialized(initialized), register_number(register_number), len(len) {}
+ValueNode::ValueNode(const string &name, bool initialized, long long register_number, int len) : name(name), initialized(initialized), register_number(register_number), len(len) {
+  
+}
 
 void ValueNode::set_value(long long value) {
     this->value = value;
@@ -184,11 +181,10 @@ void ValueNode::initialize() {
     initialized = true;
 }
 
-void ValueNode::analyze() {
-    // cout << "Length of node " << name << " = " << len << endl;
+void ValueNode::analyze(bool inside_procedure) {
 }
 
-void ValueNode::translate() {
+void ValueNode::translate(bool inside_procedure) {
 
     if (len == 2) {
         add_to_assembly("SET " + name);
@@ -197,7 +193,7 @@ void ValueNode::translate() {
 }
 
 // ArrayNode**********************************************************************************************************
-ArrayNode::ArrayNode(const string &name, long long start, long long end) : ValueNode(name, true, 4, true), start(start) {
+ArrayNode::ArrayNode(const string &name, long long start, long long end) : ValueNode(name, true, 2, true, false), start(start) {
     size = end - start + 1;
     first_free_register += size;
 
@@ -205,17 +201,22 @@ ArrayNode::ArrayNode(const string &name, long long start, long long end) : Value
     start_register = start_reg->register_number;
 }
 
-void ArrayNode::analyze() {
-    // cout << "Length of array " << name << " = " << len << endl;
+ArrayNode::ArrayNode(const string& name) : ValueNode(name, true, 2, true, false) {
+    size = 0;
+    start = 0;
+    start_register = 0;
 }
 
-void ArrayNode::translate() {
+void ArrayNode::analyze(bool inside_procedure) {
+}
+
+void ArrayNode::translate(bool inside_procedure) {
     add_to_assembly("SET " + to_string(register_number));
     add_to_assembly("STORE " + to_string(register_number));
 }
 
 // ArrayElem**********************************************************************************************************
-ArrayElem::ArrayElem(const string &name, ArrayNode* array, ValueNode* index) : ValueNode(name, true, 0, false), array(array), index(index) {}
+ArrayElem::ArrayElem(const string &name, ArrayNode* array, ValueNode* index) : ValueNode(name, true, 0, false, false), array(array), index(index) {}
 
 // ConditionNode******************************************************************************************************
 ConditionNode::ConditionNode(const string &op, ValueNode* x, ValueNode* y, bool is_negated) : op(op), x(x), y(y), is_negated(is_negated), len(2) {}
@@ -225,13 +226,18 @@ ConditionNode::~ConditionNode() {
     delete y;
 }
 
-void ConditionNode::analyze() {
+void ConditionNode::analyze(bool inside_procedure) {
 
 }
 
-void ConditionNode::translate() {
-    add_to_assembly("LOAD " + to_string(x->register_number));
-    add_to_assembly("SUB " + to_string(y->register_number));
+void ConditionNode::translate(bool inside_procedure) {
+    if (inside_procedure) {
+        add_to_assembly("LOADI " + to_string(x->register_number));
+        add_to_assembly("SUBI " + to_string(y->register_number));
+    } else {
+        add_to_assembly("LOAD " + to_string(x->register_number));
+        add_to_assembly("SUB " + to_string(y->register_number));
+    }
 }
 
 // AssignNode********************************************************************************************************
@@ -247,33 +253,115 @@ void AssignNode::set_x(ValueNode* x) {
     this->x = x;
 }
 
-void AssignNode::analyze() {
+void AssignNode::analyze(bool inside_procedure) {
     if (op == "ASSIGN") {
-        len = 2;
+        if (ArrayElem* arrayElem = dynamic_cast<ArrayElem*>(x)) {
+            len = 7;
+            if (ArrayElem* arrayElem = dynamic_cast<ArrayElem*>(y)) {
+                len += 5;
+            }
+            ValueNode* one = find_node("1");
+            if (one == nullptr) {
+                one = new ValueNode("1", false, 2, true, true);
+                add_to_memory(one);
+            }
+        } else if (ArrayElem* arrayElem = dynamic_cast<ArrayElem*>(y)) {
+            len = 7;
+        } else {
+            len = 2;
+        }
     } else if (op == "MUL") {
         if (!is_mul) {
             is_mul = true;
-            mul_line = procedure_line;
             procedures_length += 46;
         }
         
-        len = 13;
+        len = 4;
+
+        if (inside_procedure) {
+
+            len += 4;
+
+        } else {
+
+            if (ArrayElem* arrayElem = dynamic_cast<ArrayElem*>(y)) {
+                len += 7;
+            } else {
+                len += 2;
+            }
+            
+            if (ArrayElem* arrayElem = dynamic_cast<ArrayElem*>(z)) {
+                len += 7;
+            } else {
+                len += 2;
+            }
+
+        }
+
+        len += 3;
+
+        if (inside_procedure) {
+            len += 2;
+        } else if (ArrayElem* arrayElem = dynamic_cast<ArrayElem*>(x)) {
+            len += 7;
+        } else {
+            len += 2;
+        }
+
     } else {
-        len = 3;
+        if (inside_procedure) {
+            len = 3;
+        } else if (ArrayElem* arrayElem = dynamic_cast<ArrayElem*>(x)) {
+
+            len = 5;
+
+            if (ArrayElem* arrayElem = dynamic_cast<ArrayElem*>(y)) {
+                len += 8;
+                if (ArrayElem* arrayElem = dynamic_cast<ArrayElem*>(z)) {
+                    len += 5;
+                }
+            } else if (ArrayElem* arrayElem = dynamic_cast<ArrayElem*>(z)) {
+                len += 8;
+            } else {
+                len += 3;
+            }
+
+        } else if (ArrayElem* arrayElem = dynamic_cast<ArrayElem*>(y)) {
+
+            len = 8;
+            if (ArrayElem* arrayElem = dynamic_cast<ArrayElem*>(z)) {
+                len += 5;
+            }
+
+        } else if (ArrayElem* arrayElem = dynamic_cast<ArrayElem*>(z)) {
+            len = 8;
+        } else {
+            len = 3;
+        }
     }
-  
-    // cout << "Length of assign node with op " << op << " = " << len << endl;
 }
 
-void AssignNode::translate() {
+void AssignNode::translate(bool inside_procedure) {
 
     if (op == "ASSIGN") {
 
-        if (ArrayElem* arrayElem = dynamic_cast<ArrayElem*>(x)) {
+        if (inside_procedure) {
+
+            add_to_assembly("LOADI " + to_string(y->register_number));
+            add_to_assembly("STOREI " + to_string(x->register_number));
+
+        } else if (ArrayElem* arrayElem = dynamic_cast<ArrayElem*>(x)) {
 
             find_index(arrayElem, array_register_x);
-            add_to_assembly("LOAD " + to_string(y->register_number));
-            add_to_assembly("STOREI " + to_string(array_register_x));
+
+            if (ArrayElem* arrayElem = dynamic_cast<ArrayElem*>(y)) {
+                find_index(arrayElem, array_register_y);
+                add_to_assembly("LOADI " + to_string(array_register_y));
+                add_to_assembly("STOREI " + to_string(array_register_x));
+            } else {
+                add_to_assembly("LOAD " + to_string(y->register_number));
+                add_to_assembly("STOREI " + to_string(array_register_x));
+            }
 
         } else if (ArrayElem* arrayElem = dynamic_cast<ArrayElem*>(y)) {
             find_index(arrayElem, array_register_y);
@@ -288,6 +376,8 @@ void AssignNode::translate() {
         
     } else if (op == "MUL") {
 
+
+
         ValueNode* zero = find_node("0");
         add_to_assembly("LOAD " + to_string(zero->register_number));
         add_to_assembly("STORE " + to_string(result_register));
@@ -296,29 +386,47 @@ void AssignNode::translate() {
         add_to_assembly("LOAD " + to_string(one->register_number));
         add_to_assembly("STORE " + to_string(sign_register));
 
-        if (ArrayElem* arrayElem = dynamic_cast<ArrayElem*>(y)) {
-            find_index(arrayElem, array_register_y);
-            add_to_assembly("LOADI " + to_string(array_register_y));
+        if (inside_procedure) {
+
+            add_to_assembly("LOADI " + to_string(y->register_number));
             add_to_assembly("STORE " + to_string(a_register));
-        } else {
-            add_to_assembly("LOAD " + to_string(y->register_number));
-            add_to_assembly("STORE " + to_string(a_register));
-        }
-        
-        if (ArrayElem* arrayElem = dynamic_cast<ArrayElem*>(z)) {
-            find_index(arrayElem, array_register_z);
-            add_to_assembly("LOADI " + to_string(array_register_z));
+            add_to_assembly("LOADI " + to_string(z->register_number));
             add_to_assembly("STORE " + to_string(b_register));
+
         } else {
-            add_to_assembly("LOAD " + to_string(z->register_number));
-            add_to_assembly("STORE " + to_string(b_register));
+
+            if (ArrayElem* arrayElem = dynamic_cast<ArrayElem*>(y)) {
+                find_index(arrayElem, array_register_y);
+                add_to_assembly("LOADI " + to_string(array_register_y));
+                add_to_assembly("STORE " + to_string(a_register));
+            } else {
+                add_to_assembly("LOAD " + to_string(y->register_number));
+                add_to_assembly("STORE " + to_string(a_register));
+            }
+            
+            if (ArrayElem* arrayElem = dynamic_cast<ArrayElem*>(z)) {
+                find_index(arrayElem, array_register_z);
+                add_to_assembly("LOADI " + to_string(array_register_z));
+                add_to_assembly("STORE " + to_string(b_register));
+            } else {
+                add_to_assembly("LOAD " + to_string(z->register_number));
+                add_to_assembly("STORE " + to_string(b_register));
+            }
+
         }
 
         add_to_assembly("SET " + to_string(code_line + 3));
         add_to_assembly("STORE " + to_string(return_register));
-        add_to_assembly("JUMP -" + to_string(code_line - mul_line));
+        if (code_line < mul_line) {
+            add_to_assembly("JUMP " + to_string(mul_line - code_line));
+        } else {
+            add_to_assembly("JUMP -" + to_string(code_line - mul_line));
+        }
 
-        if (ArrayElem* arrayElem = dynamic_cast<ArrayElem*>(x)) {
+        if (inside_procedure) {
+            add_to_assembly("LOAD " + to_string(result_register));
+            add_to_assembly("STOREI " + to_string(x->register_number));
+        } else if (ArrayElem* arrayElem = dynamic_cast<ArrayElem*>(x)) {
             find_index(arrayElem, array_register_x);
             add_to_assembly("LOAD " + to_string(result_register));
             add_to_assembly("STOREI " + to_string(array_register_x));
@@ -330,7 +438,24 @@ void AssignNode::translate() {
         x->set_value(y->value * z->value);
     }
     else {
-        if (ArrayElem* arrayElem = dynamic_cast<ArrayElem*>(x)) {
+        if (inside_procedure) {
+
+            if(y->is_const) {
+                add_to_assembly("LOAD " + to_string(y->register_number));
+            } else {
+                add_to_assembly("LOADI " + to_string(y->register_number));
+            }
+
+            if (z->is_const) {
+                add_to_assembly(op + " " + to_string(z->register_number));
+            } else {
+                add_to_assembly(op + "I " + to_string(z->register_number));
+            }
+
+            add_to_assembly("STOREI " + to_string(x->register_number));
+
+        } else if (ArrayElem* arrayElem = dynamic_cast<ArrayElem*>(x)) {
+
             find_index(arrayElem, array_register_x);
 
             if (ArrayElem* arrayElem = dynamic_cast<ArrayElem*>(y)) {
@@ -407,26 +532,24 @@ IfNode::~IfNode() {
     delete commands;
 }
 
-void IfNode::analyze() {
-    commands->analyze();
+void IfNode::analyze(bool inside_procedure) {
+    commands->analyze(inside_procedure);
     if (condition->is_negated) {
         len = 3 + commands->len;
     } else {
         len = 4 + commands->len;
     }
-
-    // cout << "Length of if node = " << len << endl;
 }
 
-void IfNode::translate() {
-    condition->translate();
+void IfNode::translate(bool inside_procedure) {
+    condition->translate(inside_procedure);
     if (condition->is_negated) {
         add_to_assembly(condition->op + " " + to_string(commands->len + 1));
     } else {
         add_to_assembly(condition->op + " " + to_string(2));
         add_to_assembly("JUMP " + to_string(commands->len + 1));
     }
-    commands->translate();
+    commands->translate(inside_procedure);
 }
 
 // IfElseNode*********************************************************************************************************
@@ -438,26 +561,24 @@ IfElseNode::~IfElseNode() {
     delete else_commands;
 }
 
-void IfElseNode::analyze() {
-    if_commands->analyze();
-    else_commands->analyze();
+void IfElseNode::analyze(bool inside_procedure) {
+    if_commands->analyze(inside_procedure);
+    else_commands->analyze(inside_procedure);
     len = 4 + if_commands->len + else_commands->len;
-
-    // cout << "Length of if else node = " << len << endl;
 }
 
-void IfElseNode::translate() {
-    condition->translate();
+void IfElseNode::translate(bool inside_procedure) {
+    condition->translate(inside_procedure);
     if (condition->is_negated) {
         add_to_assembly(condition->op + " " + to_string(if_commands->len + 2));
-        if_commands->translate();
+        if_commands->translate(inside_procedure);
         add_to_assembly("JUMP " + to_string(else_commands->len + 1));
-        else_commands->translate();
+        else_commands->translate(inside_procedure);
     } else {
         add_to_assembly(condition->op + " " + to_string(else_commands->len + 2));
-        else_commands->translate();
+        else_commands->translate(inside_procedure);
         add_to_assembly("JUMP " + to_string(if_commands->len + 1));
-        if_commands->translate();
+        if_commands->translate(inside_procedure);
     }
 }
 
@@ -469,27 +590,28 @@ WhileNode::~WhileNode() {
     delete commands;
 }
 
-void WhileNode::analyze() {
-    commands->analyze();
+void WhileNode::analyze(bool inside_procedure) {
+    commands->analyze(inside_procedure);
+    cout << "comm len " << commands->len << endl;
     if (condition->is_negated) {
+        cout << "negated" << endl;
         len = commands->len + 4;
     } else {
+        cout << "not negated" << endl;
         len = commands->len + 5;
     }
-
-    // cout << "Length of while node = " << len << endl;
 }
 
-void WhileNode::translate() {
-    condition->translate();
+void WhileNode::translate(bool inside_procedure) {
+    condition->translate(inside_procedure);
     if (condition->is_negated) {
         add_to_assembly(condition->op + " " + to_string(commands->len + 2));
     } else {
         add_to_assembly(condition->op + " " + to_string(2));
         add_to_assembly("JUMP " + to_string(commands->len + 2));
     }
-    commands->translate();
-    add_to_assembly("JUMP -" + to_string(len));
+    commands->translate(inside_procedure);
+    add_to_assembly("JUMP -" + to_string(len - 1));
 }
 
 // RepeatNode*********************************************************************************************************
@@ -500,30 +622,32 @@ RepeatNode::~RepeatNode() {
     delete commands;
 }
 
-void RepeatNode::analyze() {
-    commands->analyze();
+void RepeatNode::analyze(bool inside_procedure) {
+    commands->analyze(inside_procedure);
     if (condition->is_negated) {
-        len = commands->len + 4;
-    } else {
         len = commands->len + 3;
+    } else {
+        len = commands->len + 4;
     }
-
-    // cout << "Length of repeat node = " << len << endl;
 }
 
-void RepeatNode::translate() {
-    commands->translate();
-    condition->translate();
+void RepeatNode::translate(bool inside_procedure) {
+    commands->translate(inside_procedure);
+    condition->translate(inside_procedure);
     if (condition->is_negated) {
+        add_to_assembly(condition->op + " -" + to_string(len - 1));
+    } else {
         add_to_assembly(condition->op + " " + to_string(2));
         add_to_assembly("JUMP -" + to_string(len - 1));
-    } else {
-        add_to_assembly(condition->op + " -" + to_string(len - 1));
+        
     }
 }
 
 // ForNode************************************************************************************************************
-ForNode::ForNode(ValueNode* i, ValueNode* start, ValueNode* end, ValueNode* one, CommandsNode* commands, const string &op) : i(i), start(start), end(end), one(one), commands(commands), op(op) {}
+ForNode::ForNode(ValueNode* i, ValueNode* start, ValueNode* end, ValueNode* one, CommandsNode* commands, const string &op) : i(i), start(start), end(end), one(one), commands(commands), op(op) {
+    counter = new ValueNode("counter" + to_string(counter_counter++), true, 0, true, false);
+    add_to_memory(counter);
+}
 
 ForNode::ForNode(ValueNode* i) : i(i) {}
 
@@ -550,28 +674,28 @@ void ForNode::set_op(const string& op) {
     this->op = op;
 }
 
-void ForNode::analyze() {
-    commands->analyze();
-    len = commands->len + 8;
-
-    // cout << "Length of for node = " << len << endl;
+void ForNode::analyze(bool inside_procedure) {
+    commands->analyze(inside_procedure);
+    len = commands->len + 10;
 }
 
-void ForNode::translate() {
-    add_to_assembly("LOAD " + to_string(start->register_number));
-    add_to_assembly("STORE " + to_string(i->register_number));
-    add_to_assembly("LOAD " + to_string(i->register_number));
-    add_to_assembly("SUB " + to_string(end->register_number));
-    add_to_assembly(op + " " + to_string(commands->len + 4));
-    commands->translate();
-    add_to_assembly("LOAD " + to_string(i->register_number));
-    
-    if (op == "JPOS") {
-        add_to_assembly("ADD " + to_string(one->register_number));
-    } else {
-        add_to_assembly("SUB " + to_string(one->register_number));
-    }
-    add_to_assembly("JUMP -" + to_string(len - 2));
+void ForNode::translate(bool inside_procedure) {
+        add_to_assembly("LOAD " + to_string(end->register_number));
+        add_to_assembly("STORE " + to_string(counter->register_number));
+        add_to_assembly("LOAD " + to_string(start->register_number));
+        add_to_assembly("STORE " + to_string(i->register_number));
+        add_to_assembly("LOAD " + to_string(i->register_number));
+        add_to_assembly("SUB " + to_string(counter->register_number));
+        add_to_assembly(op + " " + to_string(commands->len + 4));
+        commands->translate(inside_procedure);
+        add_to_assembly("LOAD " + to_string(i->register_number));
+        
+        if (op == "JPOS") {
+            add_to_assembly("ADD " + to_string(one->register_number));
+        } else {
+            add_to_assembly("SUB " + to_string(one->register_number));
+        }
+        add_to_assembly("JUMP -" + to_string(len - 4));
 }
 
 // IONode*************************************************************************************************************
@@ -583,24 +707,44 @@ IONode::~IONode() {
     delete x;
 }
 
-void IONode::analyze() {
-    // cout << "Length of io node = " << len << endl;
-
-}
-
-void IONode::print() {
-    cout << "WRITE " << x->name << endl;
-}
-
-void IONode::translate() {
-    if(ArrayElem* arrayElem = dynamic_cast<ArrayElem*>(x)) {
-        ValueNode* one = find_node("1");
-        if (one == nullptr) {
-            one = new ValueNode("1", false, 2, true);
-            add_to_memory(one);
-            add_to_assembly("SET 1");
-            add_to_assembly("STORE " + to_string(one->register_number));
+void IONode::analyze(bool inside_procedure) {
+    if (inside_procedure) {
+        if (!x->is_const) {
+            if (op == "PUT") {
+                len = 2;
+            } else {
+                len = 3;
+            }
         }
+    } else if (ArrayElem* arrayElem = dynamic_cast<ArrayElem*>(x)) {
+        ValueNode* one = find_node("1");
+        len = 7;
+        if (one == nullptr) {
+            one = new ValueNode("1", false, 2, true, true);
+            add_to_memory(one);
+        }
+        if (op == "GET") {
+            len += 1;
+        }
+    }
+}
+
+void IONode::translate(bool inside_procedure) {
+    if (inside_procedure) {
+
+        if (x->is_const) {
+            add_to_assembly(op + " " + to_string(x->register_number));
+        } else {
+            add_to_assembly("LOADI " + to_string(x->register_number));
+            add_to_assembly(op + " 0");
+            if (op == "GET") {
+                add_to_assembly("STOREI " + to_string(x->register_number));
+            }
+        }
+
+        
+    } else if(ArrayElem* arrayElem = dynamic_cast<ArrayElem*>(x)) {
+        ValueNode* one = find_node("1");
         add_to_assembly("LOAD " + to_string(arrayElem->index->register_number));
         add_to_assembly("SUB " + to_string(arrayElem->array->start_register));
         add_to_assembly("ADD " + to_string(one->register_number));
@@ -638,18 +782,16 @@ void CommandsNode::add_child(CommandNode* command) {
     commands.push_back(command);
 }
 
-void CommandsNode::analyze() {
+void CommandsNode::analyze(bool inside_procedure) {
     for (auto command : commands) {
-        command->analyze();
+        command->analyze(inside_procedure);
         len += command->len;
     }
-
-    // cout << "Length of commands node = " << len << endl;
 }
 
-void CommandsNode::translate() {
+void CommandsNode::translate(bool inside_procedure) {
     for (auto command : commands) {
-        command->translate();
+        command->translate(inside_procedure);
     }
 }
 // MainNode**********************************************************************************************************
@@ -659,60 +801,66 @@ MainNode::~MainNode() {
     delete commands;
 }
 
-void MainNode::analyze() {
-    commands->analyze();
+void MainNode::analyze(bool inside_procedure) {
+    commands->analyze(inside_procedure);
 }
 
-void MainNode::translate() {
+void MainNode::translate(bool inside_procedure) {
     if(is_mul) {
-        cout << "Mul starts at line " << mul_line << endl;
         add_mul();
     }
     for (auto val : memory) {
-        val->translate();
+        val->translate(inside_procedure);
     }
-    commands->translate();
+    commands->translate(inside_procedure);
     add_to_assembly("HALT");
 }
 
+// ProcedureHeader*****************************************************************************************************
+ProcedureHeader::ProcedureHeader(const string &name, vector<ValueNode*>* args) : name(name), arguments(args) {}
+
 // ProcedureNode*******************************************************************************************************
-ProcedureNode::ProcedureNode(const string& name, CommandsNode* commands) : name(name), commands(commands) {
+ProcedureNode::ProcedureNode(ProcedureHeader* header, CommandsNode* commands) : header(header), commands(commands) {
     len = 0;
+    return_address = new ValueNode("RTRN" + header->name, true, 0, true, true);
+    add_to_memory(return_address);
 }
 
 ProcedureNode::~ProcedureNode() {
     delete commands;
 }
 
-void ProcedureNode::translate() {
-    cout << "Procedure " << name << " starts at line " << start_line << endl;
-    commands->translate();
-    add_to_assembly("RTRN " + to_string(return_register));
+void ProcedureNode::translate(bool inside_procedure) {
+    commands->translate(inside_procedure);
+    add_to_assembly("RTRN " + to_string(return_address->register_number));
 }
 
-void ProcedureNode::analyze() {
+void ProcedureNode::analyze(bool inside_procedure) {
     start_line = procedure_line;
-    commands->analyze();
+    commands->analyze(inside_procedure);
     len = commands->len + 1;
     procedure_line += len;
 }
 
 // ProcedureCallNode***************************************************************************************************
-ProcedureCallNode::ProcedureCallNode(ProcedureNode* procedure) : procedure(procedure) {}
+ProcedureCallNode::ProcedureCallNode(ProcedureNode* procedure, vector<ValueNode*>* arguments) : procedure(procedure), arguments(arguments) {}
 
 ProcedureCallNode::~ProcedureCallNode() {
     delete procedure;
 }
 
-void ProcedureCallNode::translate() {
+void ProcedureCallNode::translate(bool inside_procedure) {
+    for (int i = 0; i < arguments->size(); i++) {
+        add_to_assembly("SET " + to_string(arguments->at(i)->register_number));
+        add_to_assembly("STORE " + to_string(procedure->header->arguments->at(i)->register_number));
+    }
     add_to_assembly("SET " + to_string(code_line + 3));
-    add_to_assembly("STORE " + to_string(return_register));
+    add_to_assembly("STORE " + to_string(procedure->return_address->register_number));
     add_to_assembly("JUMP -" + to_string(code_line - procedure->start_line));
 }
 
-void ProcedureCallNode::analyze() {
+void ProcedureCallNode::analyze(bool inside_procedure) {
     len = procedure->len;
-    cout << "Length of procedure call node = " << len << endl;
 }
 
 // ProceduresNode*******************************************************************************************************
@@ -730,19 +878,23 @@ void ProceduresNode::add_procedure(ProcedureNode* procedure) {
     procedures.push_back(procedure);
 }
 
-void ProceduresNode::translate() {
+void ProceduresNode::translate(bool inside_procedure) {
     for (auto procedure : procedures) {
-        procedure->translate();
+        procedure->translate(inside_procedure);
     }
 }
 
-void ProceduresNode::analyze() {
+void ProceduresNode::analyze(bool inside_procedure) {
     for (auto procedure : procedures) {
-        procedure->analyze();
+        procedure->analyze(inside_procedure);
         len += procedure->len;
     }
     procedures_length += len;
-    cout << "Length of procedures node = " << len << endl;
+    if (procedures.size() > 0) {
+        mul_line = procedures_length - 45;
+    } else {
+        mul_line = 1;
+    }
 }
 
 // ProgramNode********************************************************************************************************
@@ -753,16 +905,15 @@ ProgramNode::~ProgramNode() {
     delete procedures;
 }
 
-void ProgramNode::translate() {
+void ProgramNode::translate(bool inside_procedure) {
     if (procedures_length > 0) {
         add_to_assembly("JUMP " + to_string(procedures_length + 1));
     }
-    procedures->translate();
-    main->translate();
+    procedures->translate(true);
+    main->translate(false);
 }
 
-void ProgramNode::analyze() {
-    procedures->analyze();
-    main->analyze();
-    cout << "Length of procedures = " << procedures_length << endl;
+void ProgramNode::analyze(bool inside_procedure) {
+    procedures->analyze(true);
+    main->analyze(false);
 }
