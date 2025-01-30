@@ -21,11 +21,14 @@ public:
     long long value;
     bool initialized;
     long long register_number;
-    int len;
+    long long len;
     bool is_const;
+    bool is_iterator = false;
+    bool procedure_argument = false;
+    string procedure_name = "";
 
-    ValueNode(const string &name, bool initialized, int len, bool increment_reg, bool is_const);
-    ValueNode(const string &name, bool initialized, long long register_number, int len);
+    ValueNode(const string &name, bool initialized, long long len, bool increment_reg, bool is_const);
+    ValueNode(const string &name, bool initialized, long long register_number, long long len);
     void set_value(long long value);
     void create_from_node(ValueNode* node);
     void initialize();
@@ -41,8 +44,18 @@ public:
 
     ArrayNode(const string &name, long long start, long long end);
     ArrayNode(const string& name);
+    ArrayNode();
     void analyze(bool inside_procedure) override;
     void translate(bool inside_procedure) override;
+};
+
+class ProcedureArray : public ArrayNode {
+public:
+    ArrayNode* array;
+    ValueNode* start;
+
+    ProcedureArray(const string& name, const string& procedure_name);
+    ~ProcedureArray() override;
 };
 
 class ArrayElem : public ValueNode {
@@ -61,7 +74,7 @@ public:
     ValueNode* y;
     string op; //jpos, jneg, jzero
     bool is_negated;
-    int len;
+    long long len;
 
     ConditionNode(const string &op, ValueNode* x, ValueNode* y, bool is_negated);
     ~ConditionNode() override;
@@ -71,7 +84,7 @@ public:
 
 class CommandNode : public Node {
 public:
-    int len;
+    long long len;
     virtual ~CommandNode() {}
     virtual void set_x(ValueNode* x) {};
     virtual void translate(bool inside_procedure) override {}
@@ -82,7 +95,7 @@ public:
 class CommandsNode : public Node {
 public:
     vector<CommandNode*> commands;
-    int len;
+    long long len;
 
     CommandsNode();
     ~CommandsNode() override;
@@ -186,7 +199,7 @@ public:
 class MainNode : public Node {
 public:
     CommandsNode* commands;
-    int len;
+    long long len;
     bool declarations;
 
     MainNode(CommandsNode* commands, bool declarations);
@@ -208,7 +221,7 @@ class ProcedureNode : public Node {
 public:
     ProcedureHeader* header;
     CommandsNode* commands;
-    int len;
+    long long len;
     long long start_line;
     ValueNode* return_address;
 
@@ -231,11 +244,12 @@ public:
 
 class ProceduresNode : public Node {
 public:
-    int len;
+    long long len;
 
     ProceduresNode();
     ~ProceduresNode() override;
     void add_procedure(ProcedureNode* procedure);
+    void print();
     void translate(bool inside_procedure) override;
     void analyze(bool inside_procedure) override;
 };
@@ -244,7 +258,7 @@ class ProgramNode : public Node {
 public:
     MainNode* main;
     ProceduresNode* procedures;
-    int len;
+    long long len;
 
     ProgramNode(ProceduresNode* procedures, MainNode* main);
     ~ProgramNode() override;
@@ -252,17 +266,21 @@ public:
     void analyze(bool inside_procedure) override;
 };
 
-extern int first_free_register;
-extern int code_line;
+extern long long first_free_register;
+extern long long code_line;
 extern vector<ValueNode*> memory;
-extern vector<ProcedureNode*> procedures;
+extern vector<ProcedureNode*> procedures_vector;
+extern vector<ProcedureArray*> procedure_arrays;
 extern vector<string> assembly;
 
 void add_to_memory(ValueNode* value);
+void add_to_procedure_arrays(ProcedureArray* array);
 ValueNode* find_node(const string &name);
 ArrayNode* find_array(const string &name);
 ProcedureNode* find_procedure(const string &name);
-void find_index(ArrayElem* arrayElem, long long store_reg);
+ProcedureArray* find_procedure_array(const string& name);
+void print_procedures();
+void find_index(ArrayElem* arrayElem, long long store_reg, bool inside_procedure);
 void print_assembly();
 void print_memory();
 void save_assembly_to_file(const string& filename);

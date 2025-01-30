@@ -11,7 +11,6 @@
    int yylex();
    void yyerror(const char *s);
 
-   // Declare the global variable here
    bool is_in_procedure = false;
    string procedure_name = "";
 %}
@@ -66,21 +65,24 @@
 
 %%
 
-program_all:  procedures main {
-
-                  $$ = new ProgramNode($1, $2);
-                  $$->analyze(false); 
+program_all:   { 
+                  is_in_procedure = true;
+               } procedures {
+                  is_in_procedure = false;
+                  procedure_name = "";
+               } main {
+                  $$ = new ProgramNode($2, $4);
+                  $$->analyze(false);
                   $$->translate(false);
                }
 
-procedures:  procedures PROCEDURE proc_head IS declarations BEG commands END { 
-                  $$ = nullptr; 
+procedures:    procedures PROCEDURE proc_head IS declarations BEG commands END { 
+                  $$ = $1;
+                  $$->add_procedure(new ProcedureNode($3, $7));
                }
              | procedures PROCEDURE proc_head IS BEG commands END { 
                   $$ = $1;
-                  $$->add_procedure(new ProcedureNode($3, $6));
-                  is_in_procedure = false;
-                  procedure_name = "";
+                  $$->add_procedure(new ProcedureNode($3, $6));   
                }
              | { 
                   $$ = new ProceduresNode();
@@ -106,6 +108,10 @@ commands:    commands command {
              ;
 
 command:     identifier ASSIGN expression ';' {
+                  if ($1->is_iterator) {
+                     std::string error_msg = "Cannot assign value to iterator " + $1->name;
+                     yyerror(error_msg.c_str());
+                  }
                   $1->initialize();
                   $$ = $3;
                   $$->set_x($1);
@@ -127,48 +133,95 @@ command:     identifier ASSIGN expression ';' {
                      ValueNode* i = find_node(procedure_name + *$2);
 
                      if (i == nullptr) {
-                        i = new ValueNode(procedure_name + *$2, false, 0, true, false);
+                        i = new ValueNode(procedure_name + *$2, true, 0, true, false);
                         add_to_memory(i);
+                     } else if (i->is_iterator) {
+                        std::string error_msg = "Reusing iterator " + i->name;
+                        yyerror(error_msg.c_str());
                      }
+
+                     i->is_iterator = true;
+                     i->initialize();
                   } else {
                      ValueNode* i = find_node(*$2);
 
                      if (i == nullptr) {
-                        i = new ValueNode(*$2, false, 0, true, false);
+                        i = new ValueNode(*$2, true, 0, true, false);
                         add_to_memory(i);
+                     } else if (i->is_iterator) {
+                        std::string error_msg = "Reusing iterator " + i->name;
+                        yyerror(error_msg.c_str());
                      }
-                  }
 
+                     i->is_iterator = true;
+                     i->initialize();
+                  }
                } commands ENDFOR {
                   
                   ValueNode* one = find_node("1");
 
                   if (one == nullptr) {
-                     one = new ValueNode("1", false, 2, true, true);
+                     one = new ValueNode("1", true, 2, true, true);
                      add_to_memory(one);
                   }
 
-                  ValueNode* i = find_node(*$2);
+                  ValueNode* i;
+
+                  if (is_in_procedure) {
+                     i = find_node(procedure_name + *$2);
+                  } else {
+                     i = find_node(*$2);
+                  }
                   
                   $$ = new ForNode(i, $4, $6, one, $9, "JPOS"); 
+                  i->is_iterator = false;
                }
-             | FOR PID FROM value DOWNTO value DO commands ENDFOR {
+             | FOR PID FROM value DOWNTO value DO {
+                  if (is_in_procedure) {
+                     ValueNode* i = find_node(procedure_name + *$2);
+
+                     if (i == nullptr) {
+                        i = new ValueNode(procedure_name + *$2, true, 0, true, false);
+                        add_to_memory(i);
+                     } else if (i->is_iterator) {
+                        std::string error_msg = "Reusing iterator " + i->name;
+                        yyerror(error_msg.c_str());
+                     }
+
+                     i->is_iterator = true;
+                     i->initialize();
+                  } else {
+                     ValueNode* i = find_node(*$2);
+
+                     if (i == nullptr) {
+                        i = new ValueNode(*$2, true, 0, true, false);
+                        add_to_memory(i);
+                     } else if (i->is_iterator) {
+                        std::string error_msg = "Reusing iterator " + i->name;
+                        yyerror(error_msg.c_str());
+                     }
+
+                     i->is_iterator = true;
+                     i->initialize();
+                  }
+               } commands ENDFOR {
                   ValueNode* one = find_node("1");
 
                   if (one == nullptr) {
-                     one = new ValueNode("1", false, 2, true, true);
+                     one = new ValueNode("1", true, 2, true, true);
                      add_to_memory(one);
                   }
 
-                  ValueNode* i = find_node(*$2);
+                  ValueNode* i;
 
-                  if (i == nullptr) {
-                     i = new ValueNode(*$2, false, 0, true, false);
-                     add_to_memory(i);
+                  if (is_in_procedure) {
+                     i = find_node(procedure_name + *$2);
+                  } else {
+                     i = find_node(*$2);
                   }
 
-                  $$ = new ForNode(i, $4, $6, one, $8, "JNEG");
-                  
+                  $$ = new ForNode(i, $4, $6, one, $9, "JNEG");
+                  i->is_iterator = false;
                }
              | proc_call ';' { 
                   $$ = $1;
@@ -182,105 +235,242 @@ command:     identifier ASSIGN expression ';' {
                }
              ;
 
-proc_head_begin: PID '(' {
-                  is_in_procedure = true;
-                  procedure_name = *$1;
-               }
-               ;
-
 proc_head:
-            proc_head_begin args_decl ')'
+            PID '(' {
+               ProcedureNode* proc = find_procedure(*$1);
+               // if (proc != nullptr) {
+               //    std::string error_msg = "Procedure " + *$1 + " already defined";
+               //    yyerror(error_msg.c_str());
+               // }
+               procedure_name = *$1;
+            } 
+            args_decl ')'
             {
-               auto args = $2;
-               $$ = new ProcedureHeader(procedure_name, args);
+               $$ = new ProcedureHeader(procedure_name, $4);
             }
             ;
 
-proc_call:   proc_head_begin args ')' {
-                  ProcedureNode* proc = find_procedure(procedure_name);
-                  $$ = new ProcedureCallNode(proc, $2);
-                  is_in_procedure = false;
-                  procedure_name = "";
+proc_call:   PID '(' args ')' {
+                  ProcedureNode* proc = find_procedure(*$1);
+                  if (proc == nullptr) {
+                     std::string error_msg = "Procedure " + *$1 + " not defined";
+                     yyerror(error_msg.c_str());
+                  }
+                  $$ = new ProcedureCallNode(proc, $3);
                }
             ;
 
 declarations:declarations ',' PID {
-                  ValueNode* val = find_node(*$3);
 
-                  if (val == nullptr) {
-                     val = new ValueNode(*$3, false, 0, true, false);
-                     add_to_memory(val);
+                  if (is_in_procedure) {
+                     ValueNode* val = find_node(procedure_name + *$3);
+
+                     if (val == nullptr) {
+                        val = new ValueNode(procedure_name + *$3, false, 0, true, false);
+                        add_to_memory(val);
+                     } else {
+                        std::string error_msg = "Variable " + *$3 + " already declared in procedure " + procedure_name;
+                        yyerror(error_msg.c_str());
+                     }
+
                   } else {
-                     std::string error_msg = "Variable " + val->name + " already declared";
-                     yyerror(error_msg.c_str());
+                     ValueNode* val = find_node(*$3);
+
+                     if (val == nullptr) {
+                        val = new ValueNode(*$3, false, 0, true, false);
+                        add_to_memory(val);
+                     } else {
+                        std::string error_msg = "Variable " + val->name + " already declared";
+                        yyerror(error_msg.c_str());
+                     }
                   }
                }
              | PID {
-                  ValueNode* val = find_node(*$1);
 
-                  if (val == nullptr) {
-                     val = new ValueNode(*$1, false, 0, true, false);
-                     add_to_memory(val);
+                  if (is_in_procedure) {
+                     ValueNode* val = find_node(procedure_name + *$1);
+
+                     if (val == nullptr) {
+                        val = new ValueNode(procedure_name + *$1, false, 0, true, false);
+                        add_to_memory(val);
+                     } else {
+                        std::string error_msg = "Variable " + *$1 + " already declared in procedure " + procedure_name;
+                        yyerror(error_msg.c_str());
+                     }
                   } else {
-                     std::string error_msg = "Variable " + val->name + " already declared";
-                     yyerror(error_msg.c_str());
+                     ValueNode* val = find_node(*$1);
+
+                     if (val == nullptr) {
+                        val = new ValueNode(*$1, false, 0, true, false);
+                        add_to_memory(val);
+                     } else {
+                        std::string error_msg = "Variable " + val->name + " already declared";
+                        yyerror(error_msg.c_str());
+                     }
                   }
                }
             | declarations ',' PID'['number':'number']' {
-               ArrayNode* arr = new ArrayNode(*$3, stoll($5->name), stoll($7->name));
-               add_to_memory(arr);
+               cout << "array from " << $5->name << " to " << $7->name << endl;
+               if (is_in_procedure) {
+                  ArrayNode* arr = new ArrayNode(procedure_name + *$3, stoll($5->name), stoll($7->name));
+                  add_to_memory(arr);
 
-               ArrayNode* arr2 = find_array(*$3);
+                  ArrayNode* arr2 = find_array(procedure_name + *$3);
+               } else {
+                  ArrayNode* arr = new ArrayNode(*$3, stoll($5->name), stoll($7->name));
+                  add_to_memory(arr);
+
+                  ArrayNode* arr2 = find_array(*$3);
+               }
             }
             | PID'['number':'number']' {
+               cout << "array from " << $3->name << " to " << $5->name << endl;
+               if (is_in_procedure) {
+                  ArrayNode* arr = new ArrayNode(procedure_name + *$1, stoll($3->name), stoll($5->name));
+                  add_to_memory(arr);
+
+                  ArrayNode* arr2 = find_array(procedure_name + *$1);
+               } else {
                ArrayNode* arr = new ArrayNode(*$1, stoll($3->name), stoll($5->name));
                add_to_memory(arr);
 
                ArrayNode* arr2 = find_array(*$1);
+               }
             }
              ;
 
 args_decl:   args_decl ',' PID {
-                  ValueNode* val = new ValueNode(procedure_name + *$3, false, 0, true, false); 
-                  add_to_memory(val);
-                  $$ = $1;
-                  $$->push_back(val);
+                  ValueNode* val = find_node(procedure_name + *$3);
+                  
+                  if (val == nullptr) {
+                     val = new ValueNode(procedure_name + *$3, true, 0, true, false); 
+                     val->procedure_argument = true;
+                     val->procedure_name = procedure_name;
+                     add_to_memory(val);
+                     $$ = $1;
+                     $$->push_back(val);
+                  } else {
+                     std::string error_msg = "Variable " + *$3 + " already declared in procedure " + procedure_name;
+                     yyerror(error_msg.c_str());
+                  }
+                  
                }
              | PID {
-                  ValueNode* val = new ValueNode(procedure_name + *$1, false, 0, true, false); 
-                  add_to_memory(val);
-                  $$ = new vector<ValueNode*>();
-                  $$->push_back(val);
+                  ValueNode* val = find_node(procedure_name + *$1);
+
+                  if (val == nullptr) {
+                     val = new ValueNode(procedure_name + *$1, true, 0, true, false); 
+                     val->procedure_argument = true;
+                     val->procedure_name = procedure_name;
+                     add_to_memory(val);
+                     $$ = new vector<ValueNode*>();
+                     $$->push_back(val);
+                  } else {
+                     std::string error_msg = "Variable " + *$1 + " already declared in procedure " + procedure_name;
+                     yyerror(error_msg.c_str());
+                  }
                }
             | args_decl ',' T PID {
-               cout << "args_decl, T PID" << endl;
-               ArrayNode* arr = new ArrayNode(procedure_name + *$4);
-               add_to_memory(arr);
-               $$ = $1;
-               $$->push_back(arr);
+
+               ProcedureArray* arr = find_procedure_array(procedure_name + *$4);
+               ValueNode* val = find_node(procedure_name + *$4);
+               ArrayNode* arr2 = find_array(procedure_name + *$4);
+
+               if (val != nullptr || arr != nullptr || arr2 != nullptr) {
+                  std::string error_msg = "Variable " + *$4 + " already declared in procedure " + procedure_name;
+                  yyerror(error_msg.c_str());
+               } else {
+               
+                  arr = new ProcedureArray(procedure_name + *$4, procedure_name);
+                  $$ = $1;
+                  $$->push_back(arr);
+
+               }
             }
             | T PID {
-               cout << "T PID" << endl;
-               ArrayNode* arr = new ArrayNode(procedure_name + *$2);
-               add_to_memory(arr);
-               $$ = new vector<ValueNode*>();
-               $$->push_back(arr);
+               ProcedureArray* arr = find_procedure_array(procedure_name + *$2);
+               ValueNode* val = find_node(procedure_name + *$2);
+               ArrayNode* arr2 = find_array(procedure_name + *$2);
+
+               if (val != nullptr || arr != nullptr || arr2 != nullptr) {
+                  std::string error_msg = "Variable " + *$2 + " already declared in procedure " + procedure_name;
+                  yyerror(error_msg.c_str());
+               } else {
+                  arr = new ProcedureArray(procedure_name + *$2, procedure_name);
+                  $$ = new vector<ValueNode*>();
+                  $$->push_back(arr);
+               }
             }
              ;
 
 args:        args ',' PID { 
-                  ValueNode* val = find_node(*$3);
-                  $$ = $1;
-                  $$->push_back(val); 
+
+                  if (is_in_procedure) {
+                     ValueNode* val = find_node(procedure_name + *$3);
+
+                     if (val->is_iterator) {
+                        std::string error_msg = "Cannot pass iterator " + val->name + " as argument";
+                        yyerror(error_msg.c_str());
+                     }
+                     if(val == nullptr) {
+                        std::string error_msg = "Variable " + *$3 + " not declared";
+                        yyerror(error_msg.c_str());
+                     }
+                     val->initialize();
+                     $$ = $1;
+                     $$->push_back(val);
+                  } else {
+                     ValueNode* val = find_node(*$3);
+
+                     if (val->is_iterator) {
+                        std::string error_msg = "Cannot pass iterator " + val->name + " as argument";
+                        yyerror(error_msg.c_str());
+                     }
+                     if(val == nullptr) {
+                        std::string error_msg = "Variable " + *$3 + " not declared";
+                        yyerror(error_msg.c_str());
+                     }
+                     val->initialize();
+                     $$ = $1;
+                     $$->push_back(val); 
+                  }
                }
-             | PID { 
-                  ValueNode* val = find_node(*$1);
-                  $$ = new vector<ValueNode*>();
-                  $$->push_back(val); 
+             | PID {
+
+                  if (is_in_procedure) {
+                     ValueNode* val = find_node(procedure_name + *$1);
+
+                     if (val->is_iterator) {
+                        std::string error_msg = "Cannot pass iterator " + val->name + " as argument";
+                        yyerror(error_msg.c_str());
+                     }
+                     if(val == nullptr) {
+                        std::string error_msg = "Variable " + *$1 + " not declared";
+                        yyerror(error_msg.c_str());
+                     } 
+                     val->initialize();
+                     $$ = new vector<ValueNode*>();
+                     $$->push_back(val);
+                  } else {
+                     ValueNode* val = find_node(*$1);
+
+                     if (val->is_iterator) {
+                        std::string error_msg = "Cannot pass iterator " + val->name + " as argument";
+                        yyerror(error_msg.c_str());
+                     }
+                     if(val == nullptr) {
+                        std::string error_msg = "Variable " + *$1 + " not declared";
+                        yyerror(error_msg.c_str());
+                     }
+                     val->initialize();
+                     $$ = new vector<ValueNode*>();
+                     $$->push_back(val); 
+                  }
                }
              ;
 
 expression:  value {
+
                   $$ = new AssignNode("ASSIGN", nullptr, $1, nullptr);
                }
              | value ADD value {
@@ -294,13 +484,13 @@ expression:  value {
 
                   ValueNode* zero = find_node("0");
                   if (zero == nullptr) {
-                        zero = new ValueNode("0", false, 2, true, true);
+                        zero = new ValueNode("0", true, 2, true, true);
                         add_to_memory(zero);
                   }
 
                   ValueNode* one = find_node("1");
                   if (one == nullptr) {
-                        one = new ValueNode("1", false, 2, true, true);
+                        one = new ValueNode("1", true, 2, true, true);
                         add_to_memory(one);
                   }
                }
@@ -336,6 +526,10 @@ value:       number {
                   $$ = $1;
                }
              | identifier {
+                  if (!$1->initialized) {
+                     std::string error_msg = "Variable " + $1->name + " not initialized";
+                     yyerror(error_msg.c_str());
+                  }
                   $$ = $1;
                }
                ;
@@ -362,42 +556,166 @@ number:      NUM {
                }
 
 identifier:  PID {
-
                   if (is_in_procedure) {
                      $$ = find_node(procedure_name + *$1);
 
                      if ($$ == nullptr) {
-                        $$ = new ValueNode(procedure_name + *$1, true, 0, true, false);
-                        add_to_memory($$);
+                        ProcedureArray* arrp = find_procedure_array(procedure_name + *$1);
+                        if (arrp != nullptr) {
+                           std::string error_msg = "Cannot use array " + *$1 + " as variable";
+                           yyerror(error_msg.c_str());
+                        }
+                        std::string error_msg = "Variable " + *$1 + " not declared";
+                        yyerror(error_msg.c_str());
+                     } 
+                     if (ArrayNode* arr = dynamic_cast<ArrayNode*>($$)) {
+                        std::string error_msg = "Cannot use array " + *$1 + " as variable";
+                        yyerror(error_msg.c_str());
                      }
+                     
                   } else {
                      $$ = find_node(*$1);
 
                      if ($$ == nullptr) {
-                        $$ = new ValueNode(*$1, true, 0, true, false);
-                        add_to_memory($$);
+                        std::string error_msg = "Variable " + *$1 + " not declared";
+                        yyerror(error_msg.c_str());
+                     }
+                     if (ArrayNode* arr = dynamic_cast<ArrayNode*>($$)) {
+                        std::string error_msg = "Cannot use array " + *$1 + " as variable";
+                        yyerror(error_msg.c_str());
                      }
                   } 
 
                }
                | PID'['PID']' {
 
-                  ArrayNode* arr = find_array(*$1);
-                  ValueNode* index = find_node(*$3);
+                  if (is_in_procedure) {
 
-                  string arr_name = arr->name + "[" + index->name + "]";
+                     ProcedureArray* arrp = find_procedure_array(procedure_name + *$1);
 
-                  $$ = new ArrayElem(arr_name, arr, index);
+                     if (arrp == nullptr) {
+
+                        ArrayNode* arr = find_array(procedure_name + *$1);
+
+                        if (arr == nullptr) {
+                           ValueNode* val = find_node(procedure_name + *$1);
+                           if (val != nullptr) {
+                              std::string error_msg = "Variable " + *$1 + " is not an array";
+                              yyerror(error_msg.c_str());
+                           }
+                           std::string error_msg = "Array " + *$1 + " not declared";
+                           yyerror(error_msg.c_str());
+                        }
+
+                        ValueNode* index = find_node(procedure_name + *$3);
+
+                        if (index == nullptr) {
+                           std::string error_msg = "Variable " + *$3 + " not declared";
+                           yyerror(error_msg.c_str());
+                        }
+                        if (!index->initialized) {
+                           std::string error_msg = "Variable " + *$3 + " not initialized";
+                           yyerror(error_msg.c_str());
+                        }
+                        
+                        string arr_name = arr->name + "[" + index->name + "]";
+                        $$ = new ArrayElem(arr_name, arr, index);
+                        
+
+                     } else {
+                        
+                        ValueNode* index = find_node(procedure_name + *$3);
+
+                        if (index == nullptr) {
+                           std::string error_msg = "Variable " + *$3 + " not declared";
+                           yyerror(error_msg.c_str());
+                        }
+                        if (!index->initialized) {
+                           std::string error_msg = "Variable " + *$3 + " not initialized";
+                           yyerror(error_msg.c_str());
+                        }
+
+                        string arr_name = arrp->array->name + "[" + procedure_name + *$3 + "]";
+                        $$ = new ArrayElem(arr_name, arrp, index);
+
+                     }
+
+                  } else {
+
+                     ArrayNode* arr = find_array(*$1);
+
+                     if (arr == nullptr) {
+                        ValueNode* val = find_node(*$1);
+                        if (val != nullptr) {
+                           std::string error_msg = "Variable " + *$1 + " is not an array";
+                           yyerror(error_msg.c_str());
+                        }
+                        std::string error_msg = "Array " + *$1 + " not declared";
+                        yyerror(error_msg.c_str());
+                     }
+
+                     ValueNode* index = find_node(*$3);
+
+                     if (index == nullptr) {
+                        std::string error_msg = "Variable " + *$3 + " not declared";
+                        yyerror(error_msg.c_str());
+                     }
+                     if (!index->initialized) {
+                        std::string error_msg = "Variable " + *$3 + " not initialized";
+                        yyerror(error_msg.c_str());
+                     }
+
+                     string arr_name = arr->name + "[" + index->name + "]";
+                     $$ = new ArrayElem(arr_name, arr, index);
+
+                  }
                   
                }
                | PID'['number']' {
-                  ArrayNode* arr = find_array(*$1);
+                  if (is_in_procedure) {
 
-                  long long reg = stoll($3->name) - arr->start + arr->register_number;
+                     ProcedureArray* arr = find_procedure_array(procedure_name + *$1);
 
-                  string arr_name = arr->name + "[" + $3->name + "]";
+                     if (arr == nullptr) {
+                        ArrayNode* arr = find_array(procedure_name + *$1);
 
-                  $$ = new ArrayElem(arr_name, arr, $3);
+                        if (arr == nullptr) {
+                           ValueNode* val = find_node(procedure_name + *$1);
+                           if (val != nullptr) {
+                              std::string error_msg = "Variable " + *$1 + " is not an array";
+                              yyerror(error_msg.c_str());
+                           }
+                           std::string error_msg = "Array " + *$1 + " not declared";
+                           yyerror(error_msg.c_str());
+                        }
+
+                        string arr_name = arr->name + "[" + $3->name + "]";
+                        $$ = new ArrayElem(arr_name, arr, $3);
+                     } else {
+                        string arr_name = arr->name + "[" + $3->name + "]";
+                        $$ = new ArrayElem(arr_name, arr, $3);
+                        cout << arr->array->register_number;
+                     }
+
+                  } else {
+
+                     ArrayNode* arr = find_array(*$1);
+
+                     if (arr == nullptr) {
+                        ValueNode* val = find_node(*$1);
+                        if (val != nullptr) {
+                           std::string error_msg = "Variable " + *$1 + " is not an array";
+                           yyerror(error_msg.c_str());
+                        }
+                        std::string error_msg = "Array " + *$1 + " not declared";
+                        yyerror(error_msg.c_str());
+                     }
+
+                     long long reg = stoll($3->name) - arr->start + arr->register_number;
+                     string arr_name = arr->name + "[" + $3->name + "]";
+                     $$ = new ArrayElem(arr_name, arr, $3);
+
+                  }
                }
              ;
 %%
